@@ -31,4 +31,14 @@ export default defineConfig({
       },
     }),
   ],
+  // Testes unitários (Vitest). Os testes de navegador ficam em tests/e2e (Playwright).
+  test: {
+    include: ["src/**/*.test.js"],
+    environment: "node",
+    coverage: {
+      provider: "v8", include: ["src/calculos.js"], reporter: ["text", "text-summary"],
+      // Piso de cobertura: uma conta nova sem teste derruba a verificação.
+      thresholds: { lines: 85, functions: 80 },
+    },
+  },
 });
