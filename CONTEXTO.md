@@ -67,17 +67,25 @@ As melhorias foram organizadas em **6 blocos**, um PR por bloco, por ordem de ri
 |---|---|---|
 | 1 | Travas de jornada (31 dias / 24 h), modo "por duração" como padrão em novo custo variável, aviso de regime indefinido na Calculadora | ✅ Implementado (`docs/bloco-1-issues-e-pr.md`) |
 | 2 | Dicas "?" com link para a explicação completa do FAQ; rótulo "dado real" / "exemplo" / "projeção" no DRE; aviso de coleta única no Observatório; correção do "Carregar exemplo" (Issue #4) | ✅ Implementado (`docs/bloco-2-issues-e-pr.md`) |
-| 3 | Fator R/Anexo em linguagem natural (padrão semáforo); explicação dos 3 pontos de equilíbrio | Pendente |
+| 3 | Fator R/Anexo em linguagem natural (padrão semáforo); escada dos 3 pontos de equilíbrio com margem de segurança; leitura de valores no padrão brasileiro (Issue #11); percentuais com vírgula | ✅ Implementado (`docs/bloco-3-issues-e-pr.md`) |
 | 4 | Comissão por profissional (opcional); modo "aluguel de cadeira" | Pendente |
 | 5 | Calculadora guiada de taxa de cartão ponderada | Pendente |
 | 6 | Benchmarking regional agregado e mapa (Leaflet + OpenStreetMap) | Pendente |
+| 7 | Polimento visual (decidido com o Daniel): `text-wrap: pretty` nos textos explicativos; largura máxima de linha de ~65 caracteres no computador; espaçamentos padronizados entre títulos, textos de apoio e campos; selos com texto longo (ex.: SINDECOBE) viram nota de rodapé. **Alinhamento sempre à esquerda — não justificar** (rios brancos no celular, sem hifenização em português, WCAG 1.4.8) | Pendente — fazer depois do Bloco 3 |
 
 ### Componentes de explicação (reutilize, não recrie)
 - **`Ajuda`** — o "?" ao lado de um campo. Aceita `texto` (dica curta) e `faq` (id de uma pergunta de `FAQ_DADOS`, que adiciona o link "Entender melhor"). O balão é renderizado num portal com posição fixa, para não ser cortado por seções com `overflow: hidden` nem sair da tela no celular. `Campo`, `CampoPct` e `SecaoColapsavel` repassam `ajuda` e `faq`.
 - **`PainelExplicacao`** — mostra a resposta completa do FAQ por cima da tela (bottom sheet no celular, diálogo centralizado no computador). **Não troque de aba para explicar algo:** trocar de aba descarta o que ainda não foi salvo (rascunho de serviço novo e os últimos segundos digitados no Negócio).
 - **`Selo`** — selos de origem do dado: `real`, `calculado`, `aguardando`, `legal`. Todo número exibido deve deixar claro se é dado real, projeção ou exemplo.
+- **`CaixaSemaforo`** — caixa 🔴🟡🟢⚪ com título curto e frase com número concreto e próximo passo. Usada no diagnóstico de cada serviço, no enquadramento do Simples (`DiagnosticoSimples`) e na escada de pontos de equilíbrio (`EscadaPontoEquilibrio`). Use-a para qualquer novo diagnóstico em linguagem natural.
+- **`useBalaoAncorado`** — posicionamento compartilhado dos balões `Ajuda` e `InfoConceito` (portal, posição fixa, acompanha a rolagem). Qualquer novo balão deve usá-lo.
+
+### Formatação e leitura de números (padrão brasileiro)
+- Exibição: `fmtBRL` (R$ 2.500,00) e `fmtPct` (6,00%), sempre com vírgula decimal.
+- Entrada: **todo campo em que o usuário digita valor deve passar por `normalizarValorBR`**. Ele entende "2.500", "2.500,00", "1.234.567" e "2500,50". Ler direto com `Number()` ou trocar só a vírgula por ponto grava "2.500" como R$ 2,50.
 
 ### Pendências e achados para virar Issue
 - **[Dado]** A data exata da coleta dos estabelecimentos do Observatório não foi registrada. A tela mostra "até agosto de 2026" (limite comprovado pelo build de 16/08/2026). Ao refazer a coleta, preencher `COLETA_ESTABELECIMENTOS.data` em `src/App.jsx`.
+- **[Qualidade]** O projeto ainda não tem testes automatizados no repositório. Os blocos 1 a 3 foram validados com roteiros Playwright fora do repositório. Candidatos óbvios para os primeiros testes: `normalizarValorBR`, `aliquotaEfetiva`, `computeNegocioDerivado` e os pontos de equilíbrio.
 - **[Correção]** Mudar de aba descarta alterações ainda não salvas (o auto-salvar do Negócio espera 1,2 s; o rascunho de serviço novo da Calculadora não é guardado). Já existia antes dos blocos; vale tratar em bloco próprio.
 - **[Segurança]** A biblioteca `xlsx` 0.18.5 tem alertas conhecidos (prototype pollution e ReDoS) que afetam a **leitura** de planilhas. O app hoje só **gera** planilhas (não lê arquivos do usuário), então o risco prático é baixo — reavaliar se um dia o app passar a importar `.xlsx`.

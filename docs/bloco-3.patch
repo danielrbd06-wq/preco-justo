@@ -1,0 +1,559 @@
+--- a/src/App.jsx
++++ b/src/App.jsx
+@@ -60,10 +60,32 @@
+   new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(
+     Number.isFinite(v) ? v : 0
+   );
+-const fmtPct = (v, casas = 1) => `${(Number.isFinite(v) ? v : 0).toFixed(casas)}%`;
++// Percentual no padrão brasileiro (vírgula decimal), igual ao fmtBRL — antes saía "6.00%"
++// ao lado de "R$ 8.000,00" na mesma frase.
++const fmtPct = (v, casas = 1) =>
++  `${(Number.isFinite(v) ? v : 0).toLocaleString("pt-BR", { minimumFractionDigits: casas, maximumFractionDigits: casas })}%`;
+ const uid = () => Math.random().toString(36).slice(2, 10);
+ const N = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
+ 
++// Lê um valor digitado no padrão brasileiro e devolve no formato que N() entende
++// ("2500.5"). Antes, "2.500" virava R$ 2,50 e "2.500,00" virava R$ 0,00 sem aviso.
++// Regras: com vírgula, ela é o decimal e os pontos são milhar ("2.500,50" → 2500.5);
++// sem vírgula, vários pontos são milhar ("1.234.567"); um ponto só seguido de
++// exatamente 3 dígitos também é milhar ("2.500" → 2500), porque centavos têm 2
++// dígitos; nos demais casos o ponto é decimal ("2.5", "2.50"). Preserva valores
++// parciais durante a digitação ("2500," → "2500.").
++function normalizarValorBR(texto) {
++  const limpo = String(texto ?? "").replace(/[^\d.,]/g, "");
++  if (limpo.includes(",")) {
++    const [inteiro, ...resto] = limpo.split(",");
++    return `${inteiro.replace(/\./g, "")}.${resto.join("")}`;
++  }
++  const pontos = (limpo.match(/\./g) || []).length;
++  if (pontos > 1) return limpo.replace(/\./g, "");
++  if (pontos === 1 && /^\d+\.\d{3}$/.test(limpo)) return limpo.replace(".", "");
++  return limpo;
++}
++
+ async function comRetry(fn, tentativas = 1) {
+   let ultimoErro;
+   for (let i = 0; i <= tentativas; i++) {
+@@ -735,7 +757,7 @@
+ /* ======================================================================= */
+ /* App                                                                      */
+ /* ======================================================================= */
+-const VERSAO_APP = "v7.9";
++const VERSAO_APP = "v7.10";
+ const CHAVE_TEMA = "preco-justo:tema";
+ 
+ /* Rede de segurança: se qualquer aba travar por um motivo que eu não       */
+@@ -1197,41 +1219,33 @@
+ /* dica curta, pro usuário leigo não precisar adivinhar o que preencher.    */
+ /* `faq` (opcional) é o id de uma pergunta do FAQ_DADOS: aparece o link    */
+ /* "Entender melhor" que leva à explicação completa.                        */
+-function Ajuda({ texto, faq }) {
+-  const t = useT();
+-  const abrirFaq = useContext(FaqLinkContext);
+-  const [aberto, setAberto] = useState(false);
++/* Posiciona um balão (dica ou referência) junto ao botão que o abriu.      */
++/* O balão vai para o fim do <body> (portal) com posição fixa: assim não é  */
++/* cortado por seções com overflow: hidden e nunca sai da tela no celular.  */
++/* Acompanha a rolagem, fecha se o botão sair da tela ou com toque fora.     */
++function useBalaoAncorado({ aberto, setAberto, botaoRef, balaoRef, largura = 230, preferencia = "acima" }) {
+   const [pos, setPos] = useState(null);
+-  const botaoRef = useRef(null);
+-  const balaoRef = useRef(null);
+-
+-  // O balão vai para o fim do <body> (portal) com posição fixa calculada a
+-  // partir do "?". Dentro do card ele era cortado pelas seções recolhíveis
+-  // (overflow: hidden) e, perto da borda, saía da tela no celular.
+-  const LARGURA = 230;
+   const FOLGA = 12;
+   const posicionar = useCallback(() => {
+     const r = botaoRef.current?.getBoundingClientRect();
+     if (!r) return;
+     const vw = window.innerWidth || document.documentElement.clientWidth;
+     const vh = window.innerHeight || document.documentElement.clientHeight;
+-    // O "?" saiu da tela (rolagem longa): não faz sentido manter o balão solto.
+     if (r.bottom < 0 || r.top > vh) { setAberto(false); return; }
+-    const largura = Math.min(LARGURA, vw - FOLGA * 2);
+-    const left = Math.min(Math.max(r.left + r.width / 2 - largura / 2, FOLGA), vw - FOLGA - largura);
+-    const alturaBalao = balaoRef.current?.offsetHeight || 0;
+-    const cabeEmCima = r.top - 8 - alturaBalao >= FOLGA;
+-    setPos(cabeEmCima || !alturaBalao
+-      ? { left, largura, bottom: vh - r.top + 8 }
+-      : { left, largura, top: r.bottom + 8 });
+-  }, []);
++    const w = Math.min(largura, vw - FOLGA * 2);
++    const left = Math.min(Math.max(r.left + r.width / 2 - w / 2, FOLGA), vw - FOLGA - w);
++    const altura = balaoRef.current?.offsetHeight || 0;
++    const cabeAcima = r.top - 8 - altura >= FOLGA;
++    const cabeAbaixo = r.bottom + 8 + altura <= vh - FOLGA;
++    const acima = preferencia === "acima" ? (cabeAcima || !cabeAbaixo) : (!cabeAbaixo && cabeAcima);
++    setPos(acima || !altura ? { left, largura: w, bottom: vh - r.top + 8 } : { left, largura: w, top: r.bottom + 8 });
++  }, [botaoRef, balaoRef, largura, preferencia, setAberto]);
+ 
+   useLayoutEffect(() => {
+     if (!aberto) { setPos(null); return; }
+     posicionar();
+   }, [aberto, pos?.largura, posicionar]);
+ 
+-  // Acompanha o "?" se a página rolar ou a tela girar, e fecha ao tocar fora.
+   useEffect(() => {
+     if (!aberto) return undefined;
+     const fora = (e) => {
+@@ -1246,7 +1260,24 @@
+       window.removeEventListener("scroll", posicionar, true);
+       window.removeEventListener("resize", posicionar);
+     };
+-  }, [aberto, posicionar]);
++  }, [aberto, posicionar, balaoRef, botaoRef, setAberto]);
++
++  const estilo = {
++    position: "fixed", zIndex: 55, display: "block",
++    left: pos?.left ?? 0, width: pos?.largura ?? largura,
++    ...(pos?.top != null ? { top: pos.top } : { bottom: pos?.bottom ?? 0 }),
++    visibility: pos ? "visible" : "hidden",
++  };
++  return estilo;
++}
++
++function Ajuda({ texto, faq }) {
++  const t = useT();
++  const abrirFaq = useContext(FaqLinkContext);
++  const [aberto, setAberto] = useState(false);
++  const botaoRef = useRef(null);
++  const balaoRef = useRef(null);
++  const posicaoBalao = useBalaoAncorado({ aberto, setAberto, botaoRef, balaoRef, largura: 230, preferencia: "acima" });
+ 
+   if (!texto) return null;
+   const linkFaq = faq && abrirFaq;
+@@ -1265,13 +1296,7 @@
+           ref={balaoRef} role="tooltip"
+           onClick={(e) => { e.stopPropagation(); setAberto(false); }}
+           className="pop-in rounded-lg p-2.5 text-[11px] leading-snug text-left"
+-          style={{
+-            position: "fixed", zIndex: 55, display: "block",
+-            left: pos?.left ?? 0, width: pos?.largura ?? LARGURA,
+-            ...(pos?.top != null ? { top: pos.top } : { bottom: pos?.bottom ?? 0 }),
+-            visibility: pos ? "visible" : "hidden",
+-            background: t.text, color: t.bg, boxShadow: t.shadow, fontWeight: 400, whiteSpace: "normal",
+-          }}
++          style={{ ...posicaoBalao, background: t.text, color: t.bg, boxShadow: t.shadow, fontWeight: 400, whiteSpace: "normal" }}
+         >
+           {texto}
+           {linkFaq && (
+@@ -1334,7 +1359,7 @@
+       value={display}
+       onFocus={() => setFocado(true)}
+       onBlur={() => setFocado(false)}
+-      onChange={(e) => onChange(e.target.value.replace(/[^\d.,]/g, "").replace(",", "."))}
++      onChange={(e) => onChange(normalizarValorBR(e.target.value))}
+     />
+   );
+ }
+@@ -1391,6 +1416,84 @@
+   );
+ }
+ 
++/* Enquadramento no Simples Nacional em linguagem natural: em que anexo o   */
++/* negócio está, por quê, quanto paga sobre cada venda e, no Anexo V, o que */
++/* faltaria para chegar ao Fator R de 28%. Só usa números que o próprio     */
++/* usuário informou e as tabelas da LC 123/2006 — nenhuma estimativa.       */
++function DiagnosticoSimples({ n, nd }) {
++  const t = useT();
++  const rbt12 = N(n.rbt12);
++  const folha12 = N(n.folha12);
++  const efetiva = fmtPct(nd.impostoPct, 2);
++  const fatorR = fmtPct((nd.fatorR || 0) * 100);
++
++  if (rbt12 <= 0) {
++    return (
++      <CaixaSemaforo tom="atencao" titulo="Falta o faturamento dos últimos 12 meses">
++        <p>
++          Sem ele, o app usa a alíquota da 1ª faixa do Anexo {nd.anexoUsado} ({efetiva}). Informe a receita bruta
++          dos últimos 12 meses para o imposto sair exato.
++        </p>
++      </CaixaSemaforo>
++    );
++  }
++  if (!nd.aliqInfo) {
++    return (
++      <CaixaSemaforo tom="perigo" titulo="Acima do limite do Simples Nacional">
++        <p>
++          {fmtBRL(rbt12)} em 12 meses passa do limite de R$ 4.800.000,00 do Simples Nacional. Por isso nenhum
++          imposto está entrando nos preços. Converse com seu contador sobre o regime certo para esse faturamento.
++        </p>
++      </CaixaSemaforo>
++    );
++  }
++  if (nd.anexoUsado === "III" && nd.fatorR >= 0.28) {
++    return (
++      <CaixaSemaforo tom="ok" titulo="Anexo III, o de imposto menor">
++        <p>
++          Seu Fator R é {fatorR}, acima dos 28% exigidos, então você fica no Anexo III. Você paga {efetiva} de
++          imposto sobre cada venda, e é esse percentual que entra no preço dos serviços.
++        </p>
++      </CaixaSemaforo>
++    );
++  }
++  if (nd.anexoUsado === "III") {
++    return (
++      <CaixaSemaforo tom="ok" titulo="Anexo III, pela sua atividade">
++        <p>
++          Seu Fator R é {fatorR}, abaixo de 28%. Mesmo assim, como sua atividade principal é de beleza, a Receita
++          Federal entende que ela fica no Anexo III (Solução de Consulta Cosit nº 127/2021). Você paga {efetiva} de
++          imposto sobre cada venda.
++        </p>
++        <p className="text-xs" style={{ color: t.textMuted }}>Confirme esse enquadramento com seu contador.</p>
++      </CaixaSemaforo>
++    );
++  }
++  // Anexo V: mostra o caminho até o Anexo III com os números do próprio negócio.
++  const infoIII = aliquotaEfetiva(rbt12, ANEXO_III);
++  const efetivaIII = infoIII ? infoIII.aliqEfetiva * 100 : null;
++  const folhaNecessaria = rbt12 * 0.28;
++  const faltaFolha = Math.max(0, folhaNecessaria - folha12);
++  const diferencaMes = efetivaIII !== null ? ((nd.impostoPct - efetivaIII) / 100) * (rbt12 / 12) : null;
++  return (
++    <CaixaSemaforo tom="atencao" titulo="Anexo V, o de imposto maior">
++      <p>
++        Seu Fator R é {fatorR}, abaixo de 28%, então você fica no Anexo V e paga {efetiva} de imposto sobre cada
++        venda.{efetivaIII !== null && <> No Anexo III, com o mesmo faturamento, seriam {fmtPct(efetivaIII, 2)}
++        {diferencaMes > 0 && <>, cerca de {fmtBRL(diferencaMes)} a menos de imposto por mês</>}.</>}
++      </p>
++      <p>
++        Para chegar aos 28%, a folha de 12 meses (salários, pró-labore e encargos) precisaria somar
++        {" "}{fmtBRL(folhaNecessaria)}: {fmtBRL(faltaFolha)} a mais do que hoje.
++      </p>
++      <p className="text-xs" style={{ color: t.textMuted }}>
++        Aumentar a folha também aumenta outros custos, como o INSS sobre o pró-labore. Simule com seu contador
++        antes de decidir.
++      </p>
++    </CaixaSemaforo>
++  );
++}
++
+ /* ======================================================================= */
+ /* Aba: Negócio                                                            */
+ /* ======================================================================= */
+@@ -1986,8 +2089,11 @@
+                 </span>
+               </label>
+ 
+-              {nd.aliqInfo && (
++              <DiagnosticoSimples n={n} nd={nd} />
++
++              {nd.aliqInfo && N(n.rbt12) > 0 && (
+                 <div className="rounded-xl p-3" style={{ background: t.surfaceAlt }}>
++                  <p className="text-[11px] font-medium mb-1" style={{ color: t.textMuted }}>Detalhes do cálculo</p>
+                   <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs" style={{ color: t.textMuted }}>
+                     <span>Fator R: <b className="font-num">{fmtPct((nd.fatorR || 0) * 100)}</b><Ajuda faq="fator-r" texto="Folha de pagamento ÷ faturamento dos últimos 12 meses. A partir de 28%, serviços que estariam no Anexo V passam para o Anexo III, com imposto menor." /></span>
+                     <span>Anexo aplicado: <b>{nd.anexoUsado}</b></span>
+@@ -2705,33 +2811,52 @@
+ }
+ 
+ /* Semáforo de diagnóstico do Modo B — feedback imediato, sem jargão.       */
++/* Caixa no padrão "semáforo": emoji + título curto + frase com número       */
++/* concreto e próximo passo. Usada no diagnóstico de cada serviço, no        */
++/* enquadramento do Simples Nacional e na escada de pontos de equilíbrio.    */
++/* O emoji e o título carregam o estado — a cor nunca é a única pista.      */
++function CaixaSemaforo({ tom, titulo, children }) {
++  const t = useT();
++  const tons = {
++    perigo: { emoji: "🔴", bg: t.dangerSoft, fg: t.danger },
++    atencao: { emoji: "🟡", bg: t.warningSoft, fg: t.warningText },
++    ok: { emoji: "🟢", bg: t.successSoft, fg: t.successText },
++    neutro: { emoji: "⚪", bg: t.surfaceAlt, fg: t.textMuted },
++  };
++  const s = tons[tom] || tons.neutro;
++  return (
++    <div className="rounded-2xl p-4 pop-in" style={{ background: s.bg, color: s.fg }} role="status">
++      <div className="flex items-center gap-2">
++        <span aria-hidden="true" style={{ fontSize: 20, lineHeight: 1 }}>{s.emoji}</span>
++        <p className="font-semibold text-sm">{titulo}</p>
++      </div>
++      <div className="text-sm mt-1.5 space-y-1.5">{children}</div>
++    </div>
++  );
++}
++
+ function SemaforoDiagnostico({ diagnostico, r, margemMetaPct }) {
+-  const t = useT();
+   const map = {
+     prejuizo: {
+-      emoji: "🔴", label: "Prejuízo", bg: t.dangerSoft, fg: t.danger,
++      tom: "perigo", label: "Prejuízo",
+       frase: `Você está perdendo ${fmtBRL(Math.abs(r.lucroLiquido))} a cada atendimento. ${r.precoMinimo !== null ? `Cobre a partir de ${fmtBRL(r.precoMinimo)} para empatar.` : ""}`,
+     },
+     apertado: {
+-      emoji: "🟡", label: "Apertado", bg: t.warningSoft, fg: t.warningText,
++      tom: "atencao", label: "Apertado",
+       frase: r.precoIdeal !== null
+         ? `Sua margem está ${fmtPct(Math.max(0, N(margemMetaPct) - r.margemLiquidaPct))} abaixo da meta. Para chegar no ideal, cobre ${fmtBRL(r.precoIdeal)}.`
+         : "Sua margem está abaixo da meta que você definiu.",
+     },
+     saudavel: {
+-      emoji: "🟢", label: "Saudável", bg: t.successSoft, fg: t.successText,
++      tom: "ok", label: "Saudável",
+       frase: `Margem líquida de ${fmtPct(r.margemLiquidaPct)}, na meta ou acima dela (${fmtPct(N(margemMetaPct))}).`,
+     },
+   };
+   const s = map[diagnostico];
+   return (
+-    <div className="rounded-2xl p-4 pop-in" style={{ background: s.bg, color: s.fg }} role="status">
+-      <div className="flex items-center gap-2">
+-        <span aria-hidden="true" style={{ fontSize: 20, lineHeight: 1 }}>{s.emoji}</span>
+-        <p className="font-semibold text-sm">{s.label}</p>
+-      </div>
+-      <p className="text-sm mt-1.5">{s.frase}</p>
+-    </div>
++    <CaixaSemaforo tom={s.tom} titulo={s.label}>
++      <p>{s.frase}</p>
++    </CaixaSemaforo>
+   );
+ }
+ 
+@@ -3402,7 +3527,7 @@
+                   value={precoFocado ? precoCobrado : (N(precoCobrado) > 0 ? N(precoCobrado).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }) : "")}
+                   onFocus={() => setPrecoFocado(true)}
+                   onBlur={() => setPrecoFocado(false)}
+-                  onChange={(e) => setPrecoCobrado(e.target.value.replace(/[^\d.,]/g, "").replace(",", "."))}
++                  onChange={(e) => setPrecoCobrado(normalizarValorBR(e.target.value))}
+                   aria-label="Preço cobrado pelo serviço, em reais"
+                 />
+               </Campo>
+@@ -3645,7 +3770,7 @@
+                       value={precoFocado ? precoCobrado : (N(precoCobrado) > 0 ? N(precoCobrado).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }) : "")}
+                       onFocus={() => setPrecoFocado(true)}
+                       onBlur={() => setPrecoFocado(false)}
+-                      onChange={(e) => setPrecoCobrado(e.target.value.replace(/[^\d.,]/g, "").replace(",", "."))}
++                      onChange={(e) => setPrecoCobrado(normalizarValorBR(e.target.value))}
+                       aria-label="Preço cobrado pelo serviço, em reais"
+                     />
+                   </Campo>
+@@ -4101,7 +4226,9 @@
+       </div>
+ 
+       <div className="conteudo-normal-painel">
+-      <div id="area-impressao">
++      {/* space-y-3: os cards desta área ficavam colados uns nos outros (sem espaço   */}
++      {/* vertical), o mesmo gap-3 que as grades de indicadores já usam entre colunas. */}
++      <div id="area-impressao" className="space-y-3">
+       <p className="text-[11px]" style={{ color: t.textMuted }}>
+         Recalculado com as configurações atuais do Negócio — mude um custo fixo ou o regime tributário e tudo aqui se atualiza sozinho.
+       </p>
+@@ -4118,15 +4245,14 @@
+         </div>
+       )}
+ 
++      <EscadaPontoEquilibrio
++        receita={dre.receitaBruta} rcm={dre.rcm}
++        financeiro={peFinanceiroRS} contabil={peContabilRS} economico={peEconomicoRS}
++        capitalInvestido={N(negocio.capitalInvestido)} taxaRetorno={N(negocio.taxaRetorno)}
++        custoNaoCaixa={nd.custoFixoNaoCaixa} margemSeguranca={margemSeguranca}
++      />
++
+       <div className="grid sm:grid-cols-2 gap-3">
+-        <IndicadorCard titulo="Ponto de equilíbrio" icon={TrendingUp}>
+-          <LinhaIndicador label="Contábil" valor={fmtBRL(peContabilRS)}
+-            info={{ texto: "Quanto você precisa faturar pra cobrir todos os custos, sem sobrar nem faltar nada — o zero a zero clássico.", referencia: "Padoveze, Contabilidade Gerencial" }} />
+-          <LinhaIndicador label="Financeiro" valor={fmtBRL(peFinanceiroRS)} sub="exclui itens sem saída de caixa"
+-            info={{ texto: "Igual ao contábil, mas tira do custo fixo o que não sai do caixa de verdade (como depreciação) — mostra o mínimo pra não faltar dinheiro no bolso.", referencia: "Padoveze, Contabilidade Gerencial" }} />
+-          <LinhaIndicador label="Econômico" valor={fmtBRL(peEconomicoRS)} sub="inclui custo de oportunidade do capital"
+-            info={{ texto: "Vai além de não ter prejuízo: soma ao custo fixo o quanto seu capital investido renderia em outro lugar, então mostra o ponto onde o negócio realmente compensa mais que a alternativa.", referencia: "Padoveze, Contabilidade Gerencial" }} />
+-        </IndicadorCard>
+         <IndicadorCard titulo="Ponto de Equilíbrio Ponderado (Mix de Serviços)" icon={TrendingUp}>
+           {servicosValidos.length === 0 || margemContribuicaoPonderada <= 0 ? (
+             <p className="text-xs" style={{ color: t.textMuted }}>—</p>
+@@ -4151,17 +4277,6 @@
+             (Padoveze, Contabilidade Gerencial.)
+           </p>
+         </IndicadorCard>
+-        <IndicadorCard titulo="Margem de segurança" icon={ShieldCheck}
+-          info={{ texto: "Quanto sua receita atual pode cair antes de você chegar no ponto de equilíbrio — quanto maior, mais colchão de segurança o negócio tem.", referencia: "Perez Jr., Oliveira e Costa, Gestão Estratégica de Custos" }}>
+-          {margemSeguranca === null ? (
+-            <p className="text-xs" style={{ color: t.textMuted }}>—</p>
+-          ) : (
+-            <>
+-              <p className="font-num text-2xl font-bold" style={{ color: margemSeguranca > 0 ? t.successText : t.danger }}>{fmtPct(margemSeguranca)}</p>
+-              <p className="text-xs mt-1" style={{ color: t.textMuted }}>quanto a receita pode cair antes do ponto de equilíbrio</p>
+-            </>
+-          )}
+-        </IndicadorCard>
+         <IndicadorCard titulo="Alavancagem operacional (GAO)" icon={TrendingDown}
+           info={{ texto: "Mostra o quanto o resultado do negócio varia, em %, pra cada 1% de variação na receita — custo fixo alto costuma deixar o GAO mais alto (mais sensível a oscilar as vendas).", referencia: "Perez Jr., Oliveira e Costa, Gestão Estratégica de Custos" }}>
+           {gao === null ? (
+@@ -4455,27 +4570,170 @@
+ function InfoConceito({ texto, referencia }) {
+   const t = useT();
+   const [aberto, setAberto] = useState(false);
++  const botaoRef = useRef(null);
++  const balaoRef = useRef(null);
++  const posicaoBalao = useBalaoAncorado({ aberto, setAberto, botaoRef, balaoRef, largura: 230, preferencia: "abaixo" });
+   return (
+     <span className="relative inline-block" style={{ marginLeft: 4, verticalAlign: "middle" }}>
+-      <button type="button" onClick={() => setAberto((v) => !v)} aria-label="O que é isso"
++      <button ref={botaoRef} type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); setAberto((v) => !v); }}
++        aria-label="O que é isso" aria-expanded={aberto}
+         className="btn-press touch-target inline-flex items-center justify-center rounded-full"
+         style={{ width: 15, height: 15, background: t.secondarySoft, color: t.secondaryText, border: `1px solid ${t.secondaryText}44` }}>
+         <Info size={10} strokeWidth={2.75} />
+       </button>
+-      {aberto && (
++      {aberto && createPortal(
+         <span
+-          onClick={() => setAberto(false)}
+-          className="pop-in absolute z-50 rounded-lg p-2.5 text-[11px] leading-snug text-left"
+-          style={{ background: t.text, color: t.bg, width: 210, top: "135%", left: 0, boxShadow: t.shadow, fontWeight: 400 }}
++          ref={balaoRef} role="tooltip"
++          onClick={(e) => { e.stopPropagation(); setAberto(false); }}
++          className="pop-in rounded-lg p-2.5 text-[11px] leading-snug text-left"
++          style={{ ...posicaoBalao, background: t.text, color: t.bg, boxShadow: t.shadow, fontWeight: 400, whiteSpace: "normal" }}
+         >
+           <span style={{ display: "block" }}>{texto}</span>
+           {referencia && <span style={{ display: "block", marginTop: 6, opacity: 0.72, fontStyle: "italic" }}>{referencia}</span>}
+-        </span>
++        </span>,
++        document.body
+       )}
+     </span>
+   );
+ }
+ 
++/* Os três pontos de equilíbrio como uma escada de perguntas, na ordem em   */
++/* que o dono do negócio precisa respondê-las: o caixa fecha? → cobre todos */
++/* os custos? → rende mais que o dinheiro aplicado? Cada degrau mostra o    */
++/* valor, um medidor de quanto a receita projetada já cobre e quanto falta. */
++/* A margem de segurança fecha o card: é a folga sobre o degrau do meio.    */
++function EscadaPontoEquilibrio({ receita, rcm, financeiro, contabil, economico, capitalInvestido, taxaRetorno, custoNaoCaixa, margemSeguranca }) {
++  const t = useT();
++  const abrirFaq = useContext(FaqLinkContext);
++  const temCapital = capitalInvestido > 0;
++  const semVolume = !(receita > 0);
++  const semMargem = !semVolume && !(rcm > 0);
++
++  const degraus = [
++    {
++      id: "financeiro", pergunta: "O caixa fecha?", nome: "Financeiro", valor: financeiro,
++      explica: custoNaoCaixa > 0
++        ? `Paga as contas que saem do bolso. Não inclui ${fmtBRL(custoNaoCaixa)} de depreciação, que não é saída de dinheiro.`
++        : "Paga as contas que saem do bolso. Sem depreciação cadastrada, fica igual ao contábil.",
++      info: { texto: "Igual ao contábil, mas tira do custo fixo o que não sai do caixa de verdade (como depreciação) — mostra o mínimo pra não faltar dinheiro no bolso.", referencia: "Padoveze, Contabilidade Gerencial" },
++    },
++    {
++      id: "contabil", pergunta: "Cobre todos os custos?", nome: "Contábil", valor: contabil,
++      explica: "O zero a zero: paga as contas do mês, o seu pró-labore e o desgaste dos equipamentos.",
++      info: { texto: "Quanto você precisa faturar pra cobrir todos os custos, sem sobrar nem faltar nada — o zero a zero clássico.", referencia: "Padoveze, Contabilidade Gerencial" },
++    },
++    {
++      id: "economico", pergunta: "Rende mais que o dinheiro aplicado?", nome: "Econômico", valor: economico,
++      explica: temCapital
++        ? `Além dos custos, paga o que os ${fmtBRL(capitalInvestido)} investidos renderiam aplicados (${fmtPct(taxaRetorno)} ao mês).`
++        : "Informe o capital investido na aba Negócio para calcular. Sem ele, fica igual ao contábil.",
++      info: { texto: "Vai além de não ter prejuízo: soma ao custo fixo o quanto seu capital investido renderia em outro lugar, então mostra o ponto onde o negócio realmente compensa mais que a alternativa.", referencia: "Padoveze, Contabilidade Gerencial" },
++    },
++  ];
++  const alcancou = (v) => Number.isFinite(v) && receita >= v;
++
++  let resumo;
++  if (semVolume) {
++    resumo = { tom: "neutro", titulo: "Falta o volume de atendimentos", frase: "Informe quantos atendimentos por mês cada serviço tem, na Calculadora, para comparar a receita com os pontos de equilíbrio." };
++  } else if (semMargem) {
++    resumo = { tom: "perigo", titulo: "Nenhum volume de vendas cobre os custos", frase: "Com os preços atuais, o que sobra de cada venda depois dos custos variáveis e impostos não é positivo. Vender mais só aumenta o prejuízo: revise os preços na Calculadora." };
++  } else if (!alcancou(financeiro)) {
++    resumo = { tom: "perigo", titulo: "O caixa não fecha", frase: `Com a receita projetada de ${fmtBRL(receita)} por mês, faltam ${fmtBRL(financeiro - receita)} só para pagar as contas que saem do caixa.` };
++  } else if (!alcancou(contabil)) {
++    resumo = { tom: "atencao", titulo: "O caixa fecha, mas há prejuízo", frase: `A receita projetada de ${fmtBRL(receita)} paga as contas do mês, mas não cobre o desgaste dos equipamentos. Faltam ${fmtBRL(contabil - receita)} por mês para o zero a zero.` };
++  } else if (temCapital && !alcancou(economico)) {
++    resumo = { tom: "atencao", titulo: "Cobre os custos, mas rende pouco", frase: `A receita projetada de ${fmtBRL(receita)} cobre todos os custos, mas o negócio ainda rende menos do que o capital investido renderia aplicado. Faltam ${fmtBRL(economico - receita)} por mês.` };
++  } else if (temCapital) {
++    resumo = { tom: "ok", titulo: "Os três pontos foram alcançados", frase: `A receita projetada de ${fmtBRL(receita)} fecha o caixa, cobre todos os custos e rende mais do que o capital investido renderia aplicado.` };
++  } else {
++    resumo = { tom: "ok", titulo: "O caixa fecha e os custos estão cobertos", frase: `A receita projetada de ${fmtBRL(receita)} passa do zero a zero com ${fmtBRL(receita - contabil)} de folga por mês.` };
++  }
++
++  return (
++    <div className="rounded-2xl p-4 sm:p-5" style={{ background: t.surface, border: `1px solid ${t.border}`, boxShadow: t.shadow }}>
++      <div className="flex items-center gap-1.5">
++        <TrendingUp size={14} style={{ color: t.primaryText }} />
++        <span className="text-xs font-semibold" style={{ color: t.text }}>Ponto de equilíbrio: quanto faturar por mês</span>
++      </div>
++      <p className="text-xs mt-1.5 mb-3" style={{ color: t.textMuted }}>
++        São três valores porque respondem a três perguntas diferentes, uma depois da outra.
++        {abrirFaq && (
++          <>
++            {" "}
++            <button type="button" onClick={() => abrirFaq("ponto-de-equilibrio")} className="btn-press font-semibold underline underline-offset-2" style={{ color: t.primaryText }}>
++              Por que três? →
++            </button>
++          </>
++        )}
++      </p>
++
++      <CaixaSemaforo tom={resumo.tom} titulo={resumo.titulo}>
++        <p>{resumo.frase}</p>
++      </CaixaSemaforo>
++
++      <ol className="mt-4 space-y-3">
++        {degraus.map((d, i) => {
++          const calculavel = Number.isFinite(d.valor) && !semVolume;
++          const ok = calculavel && alcancou(d.valor);
++          const critico = d.id === "financeiro";
++          const cor = ok ? t.success : critico ? t.danger : t.warning;
++          const trilho = ok ? t.successSoft : critico ? t.dangerSoft : t.warningSoft;
++          const pctCoberto = calculavel && d.valor > 0 ? Math.min(100, (receita / d.valor) * 100) : 0;
++          const Icone = ok ? CheckCircle2 : AlertTriangle;
++          return (
++            <li key={d.id} className="fade-up" style={{ animationDelay: `${i * 60}ms` }}>
++              <div className="flex items-start justify-between gap-3">
++                <div className="min-w-0">
++                  <p className="text-sm font-medium inline-flex items-center gap-1.5" style={{ color: t.text }}>
++                    {calculavel && <Icone size={14} className="shrink-0" style={{ color: ok ? t.successText : critico ? t.danger : t.warningText }} aria-hidden="true" />}
++                    {d.pergunta}
++                  </p>
++                  <p className="text-[11px]" style={{ color: t.textMuted }}>
++                    {d.nome}
++                    <InfoConceito texto={d.info.texto} referencia={d.info.referencia} />
++                  </p>
++                </div>
++                <div className="text-right shrink-0">
++                  <p className="font-num text-sm font-semibold whitespace-nowrap" style={{ color: t.text }}>{Number.isFinite(d.valor) ? fmtBRL(d.valor) : "—"}</p>
++                  {calculavel && (
++                    <p className="text-[11px] font-medium whitespace-nowrap" style={{ color: ok ? t.successText : critico ? t.danger : t.warningText }}>
++                      {ok ? "alcançado" : `faltam ${fmtBRL(d.valor - receita)}`}
++                    </p>
++                  )}
++                </div>
++              </div>
++              {calculavel && (
++                <div className="mt-1.5 rounded-full overflow-hidden" style={{ height: 6, background: trilho }}
++                  role="meter" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(pctCoberto)}
++                  aria-label={`${d.pergunta} A receita projetada cobre ${Math.round(pctCoberto)}% deste ponto.`}>
++                  <div className="rounded-full" style={{ height: "100%", width: `${pctCoberto}%`, background: cor, transition: "width .5s cubic-bezier(.2,.8,.2,1)" }} />
++                </div>
++              )}
++              <p className="text-[11px] mt-1" style={{ color: t.textMuted }}>{d.explica}</p>
++            </li>
++          );
++        })}
++      </ol>
++
++      {margemSeguranca !== null && !semVolume && (
++        <div className="mt-4 pt-3 flex items-start justify-between gap-3" style={{ borderTop: `1px solid ${t.border}` }}>
++          <p className="text-xs" style={{ color: t.textMuted }}>
++            <span className="inline-flex items-center gap-1 font-medium" style={{ color: t.text }}>
++              <ShieldCheck size={13} style={{ color: t.primaryText }} aria-hidden="true" /> Margem de segurança
++              <InfoConceito texto="Quanto sua receita atual pode cair antes de você chegar no ponto de equilíbrio — quanto maior, mais colchão de segurança o negócio tem." referencia="Perez Jr., Oliveira e Costa, Gestão Estratégica de Custos" />
++            </span>
++            <br />
++            {margemSeguranca > 0
++              ? `A receita pode cair até ${fmtPct(margemSeguranca)} antes de chegar ao zero a zero.`
++              : "A receita já está abaixo do zero a zero."}
++          </p>
++          <p className="font-num text-lg font-bold shrink-0" style={{ color: margemSeguranca > 0 ? t.successText : t.danger }}>{fmtPct(margemSeguranca)}</p>
++        </div>
++      )}
++    </div>
++  );
++}
++
+ function IndicadorCard({ titulo, icon: Icon, info, children }) {
+   const t = useT();
+   return (
