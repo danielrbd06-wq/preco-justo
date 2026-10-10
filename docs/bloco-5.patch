@@ -1,0 +1,674 @@
+--- a/src/App.jsx
++++ b/src/App.jsx
+@@ -9,7 +9,7 @@
+   CheckCircle2, ShieldCheck, Clock3, Sparkles, Info, Building2,
+   Landmark, PiggyBank, TrendingUp, TrendingDown, HelpCircle,
+   Download, Printer, X, Pencil, Sun, Moon, Monitor, Settings2, Share2, ChevronDown, CalendarCheck, Package,
+-  Scissors, Hand, Flower2,
++  Scissors, Hand, Flower2, CreditCard,
+ } from "lucide-react";
+ import { createPortal } from "react-dom";
+ import * as XLSX from "xlsx";
+@@ -311,6 +311,8 @@
+   ],
+   insumosCompartilhados: [],
+   profissionais: [],
++  // Formas de pagamento (Bloco 5): { [id]: { participacaoPct, taxaPct } }.
++  recebimento: {},
+   perfil: {
+     nomeResponsavel: "", nomeFantasia: "", cnpj: "",
+     segmento: null, modeloOperacao: null,
+@@ -421,6 +423,45 @@
+   return N(servico?.comissaoPct);
+ }
+ 
++/* Formas de pagamento (Bloco 5). Cada forma tem a parte das vendas que     */
++/* entra por ela e a taxa cobrada. Dinheiro não tem taxa. Nenhuma taxa vem   */
++/* preenchida: cada maquininha e cada banco cobra diferente, e o número      */
++/* certo está no extrato ou no contrato do próprio usuário.                  */
++const FORMAS_PAGAMENTO = [
++  { id: "dinheiro", label: "Dinheiro", semTaxa: true },
++  { id: "pix", label: "Pix" },
++  { id: "debito", label: "Débito" },
++  { id: "credito", label: "Crédito à vista" },
++  { id: "parcelado", label: "Crédito parcelado" },
++];
++
++/* Taxa média de recebimento: média das taxas ponderada pela parte das vendas */
++/* de cada forma. Só vale como média do negócio quando as partes somam 100%  */
++/* (completo); antes disso, a tela mostra quanto falta.                      */
++function calcularTaxaRecebimento(recebimento) {
++  const itens = FORMAS_PAGAMENTO.map((f) => {
++    const r = recebimento?.[f.id] || {};
++    return {
++      id: f.id, label: f.label,
++      participacao: Math.max(0, N(r.participacaoPct)),
++      taxa: f.semTaxa ? 0 : Math.min(99, Math.max(0, N(r.taxaPct))),
++    };
++  }).filter((i) => i.participacao > 0);
++  if (itens.length === 0) return null;
++  const soma = itens.reduce((s, i) => s + i.participacao, 0);
++  const pct = itens.reduce((s, i) => s + i.participacao * i.taxa, 0) / soma;
++  return { pct, soma, completo: Math.abs(soma - 100) <= 0.5, itens };
++}
++
++/* Taxa de cartão que de fato entra no preço de um serviço: a média do       */
++/* negócio, se o serviço foi marcado para usá-la e ela existe; senão, a do   */
++/* próprio serviço. Serviços salvos antes do Bloco 5 não têm taxaModo e      */
++/* mantêm a taxa que já tinham.                                              */
++function taxaEfetiva(servico, nd) {
++  if (servico?.taxaModo === "negocio" && nd?.taxaRecebimento) return nd.taxaRecebimento.pct;
++  return N(servico?.taxaCartaoPct);
++}
++
+ function computeNegocioDerivado(n) {
+   const custosFixosSoma = n.custosFixos.reduce((s, i) => s + N(i.valor), 0);
+   const proLabore = N(n.proLabore);
+@@ -437,6 +478,8 @@
+   const custoFixoLiquido = Math.max(0, custoFixoTotal - receitaAluguelCadeiras);
+   const custoFixoPorHora = horasTotais > 0 ? custoFixoLiquido / horasTotais : 0;
+   const comissaoEquipe = calcularComissaoEquipe(n.profissionais);
++  const recebimento = calcularTaxaRecebimento(n.recebimento);
++  const taxaRecebimento = recebimento?.completo ? recebimento : null;
+ 
+   let impostoPct = 0, fatorR = null, anexoUsado = null, aliqInfo = null;
+   if (n.regime === "simples") {
+@@ -451,7 +494,7 @@
+ 
+   return {
+     custosFixosSoma, proLabore, meiDas, custoFixoTotal, custoFixoNaoCaixa,
+-    receitaAluguelCadeiras, custoFixoLiquido, comissaoEquipe,
++    receitaAluguelCadeiras, custoFixoLiquido, comissaoEquipe, taxaRecebimento,
+     horasTotais, custoFixoPorHora, impostoPct, fatorR, anexoUsado, aliqInfo,
+     numeroProfissionais: Math.max(1, N(n.numeroProfissionais) || 1),
+     diasMes: N(n.diasMes),
+@@ -535,9 +578,10 @@
+ /* Motor de cálculo por serviço (fórmula original intacta — só a origem    */
+ /* de "totalVariaveis" ficou inteligente)                                  */
+ /* ======================================================================= */
+-function calcularServico({ custosVariaveis, comissaoPct: comissaoInformada, comissaoModo, taxaCartaoPct, margemPct, horasPorAtendimento, atendimentosMes }, nd) {
++function calcularServico({ custosVariaveis, comissaoPct: comissaoInformada, comissaoModo, taxaCartaoPct: taxaInformada, taxaModo, margemPct, horasPorAtendimento, atendimentosMes }, nd) {
+   if (!nd || !nd.horasTotais) return { status: "sem-negocio" };
+   const comissaoPct = comissaoEfetiva({ comissaoPct: comissaoInformada, comissaoModo }, nd);
++  const taxaCartaoPct = taxaEfetiva({ taxaCartaoPct: taxaInformada, taxaModo }, nd);
+   const totalVariaveis = somaCustosVariaveis(custosVariaveis, { atendimentosMes, diasMesNegocio: nd.diasMes, insumosCompartilhados: nd.insumosCompartilhados });
+   const imposto = nd.impostoPct;
+   const soma = N(comissaoPct) + N(taxaCartaoPct) + imposto + N(margemPct);
+@@ -559,7 +603,7 @@
+   const pontoEquilibrioServico = margemContribuicaoUnitaria > 0 ? nd.custoFixoLiquido / margemContribuicaoUnitaria : Infinity;
+ 
+   return {
+-    status: "ok", totalVariaveis, custoFixoRateado, preco, comissaoPct,
++    status: "ok", totalVariaveis, custoFixoRateado, preco, comissaoPct, taxaCartaoPct,
+     valorComissao, valorTaxaCartao, valorImposto, valorMargem,
+     margemContribuicaoUnitaria, lucroProjetadoMes, pontoEquilibrioServico,
+   };
+@@ -586,9 +630,10 @@
+ /* achar o preço a partir da margem, acha a margem a partir do preço.      */
+ /* Verificado numericamente que os dois modos batem exatamente (ver PR).   */
+ /* ======================================================================= */
+-function calcularReverso({ custosVariaveis, comissaoPct: comissaoInformada, comissaoModo, taxaCartaoPct, precoCobrado, horasPorAtendimento, atendimentosMes, margemMetaPct }, nd) {
++function calcularReverso({ custosVariaveis, comissaoPct: comissaoInformada, comissaoModo, taxaCartaoPct: taxaInformada, taxaModo, precoCobrado, horasPorAtendimento, atendimentosMes, margemMetaPct }, nd) {
+   if (!nd || !nd.horasTotais) return { status: "sem-negocio" };
+   const comissaoPct = comissaoEfetiva({ comissaoPct: comissaoInformada, comissaoModo }, nd);
++  const taxaCartaoPct = taxaEfetiva({ taxaCartaoPct: taxaInformada, taxaModo }, nd);
+   const preco = N(precoCobrado);
+   if (preco <= 0) return { status: "sem-preco" };
+ 
+@@ -625,23 +670,80 @@
+   if (lucroLiquido >= 0) diagnostico = margemLiquidaPct >= N(margemMetaPct) ? "saudavel" : "apertado";
+ 
+   return {
+-    status: "ok", diagnostico, comissaoPct,
++    status: "ok", diagnostico, comissaoPct, taxaCartaoPct,
+     preco, totalVariaveis, custoFixoRateado, valorComissao, valorTaxaCartao, valorImposto,
+     custoTotal, lucroBruto, lucroLiquido, margemLiquidaPct, markup, lucroPorHora,
+     margemContribuicaoUnitaria, pontoEquilibrioServico, precoMinimo, precoIdeal, lucroProjetadoMes,
+   };
+ }
+ 
+-/* Comissão + taxa de cartão do serviço (Bloco 4). Com a comissão média da   */
+-/* equipe disponível, o usuário escolhe entre ela e uma comissão própria do  */
+-/* serviço, e vê de onde a média saiu. Usado nos dois modos da Calculadora.  */
+-function BlocoComissaoETaxa({ nd, comissaoPct, setComissaoPct, comissaoModo, setComissaoModo, taxaCartaoPct, setTaxaCartaoPct }) {
++/* Escolha entre um valor médio do negócio e um valor próprio do serviço:     */
++/* a comissão média da equipe (Bloco 4) e a taxa média de recebimento        */
++/* (Bloco 5) usam o mesmo seletor e a mesma caixa de composição.             */
++function SeletorOrigem({ rotulo, ajuda, faq, ariaLabel, opcoes, valor, onChange }) {
++  const t = useT();
++  return (
++    <div>
++      <span className="block text-xs font-medium leading-snug" style={{ color: t.textMuted }}>
++        {rotulo}
++        {ajuda && <Ajuda faq={faq} texto={ajuda} />}
++      </span>
++      <div className="flex gap-1 p-1 rounded-lg mt-1" role="radiogroup" aria-label={ariaLabel} style={{ background: t.surfaceAlt }}>
++        {opcoes.map((o) => (
++          <button key={o.id} type="button" role="radio" aria-checked={valor === o.id} onClick={() => onChange(o.id)}
++            className="btn-press flex-1 rounded-md px-2 py-1.5 text-xs font-medium leading-snug"
++            style={{ background: valor === o.id ? t.surface : "transparent", color: valor === o.id ? t.text : t.textMuted, boxShadow: valor === o.id ? t.shadow : "none", border: `1px solid ${valor === o.id ? t.border : "transparent"}`, transition: "background .18s ease, color .18s ease, box-shadow .18s ease" }}>
++            {o.label}
++          </button>
++        ))}
++      </div>
++    </div>
++  );
++}
++
++/* Mostra de onde uma média saiu. A lista tem largura máxima para o valor    */
++/* não ficar longe do nome em telas largas.                                  */
++function ComposicaoMedia({ titulo, linhas, total }) {
++  const t = useT();
++  return (
++    <div className="pop-in rounded-xl p-3 text-xs" style={{ background: t.primarySoft }}>
++      <p style={{ color: t.text }}>{titulo}</p>
++      <ul className="mt-1.5 space-y-0.5 max-w-sm">
++        {linhas.map((l) => (
++          <li key={l.id} className="flex justify-between gap-3" style={{ color: t.textMuted }}>
++            <span className="min-w-0 truncate">{l.nome}</span>
++            <span className="font-num shrink-0">{l.valor}</span>
++          </li>
++        ))}
++      </ul>
++      <p className="mt-1.5 font-semibold" style={{ color: t.primaryText }}>{total}</p>
++    </div>
++  );
++}
++
++function AvisoMediaIndisponivel({ children }) {
++  const t = useT();
++  return (
++    <p className="text-[11px] flex items-start gap-1" style={{ color: t.warningText }}>
++      <AlertTriangle size={12} className="mt-0.5 shrink-0" />
++      <span>{children}</span>
++    </p>
++  );
++}
++
++/* Comissão + taxa de cartão do serviço. Com a comissão média da equipe      */
++/* (Bloco 4) ou a taxa média de recebimento (Bloco 5) disponível, o usuário  */
++/* escolhe entre a média e um valor próprio do serviço, e vê de onde a média */
++/* saiu. Usado nos dois modos da Calculadora.                                */
++function BlocoComissaoETaxa({ nd, comissaoPct, setComissaoPct, comissaoModo, setComissaoModo, taxaCartaoPct, setTaxaCartaoPct, taxaModo, setTaxaModo }) {
+   const t = useT();
+   const equipe = nd?.comissaoEquipe;
++  const media = nd?.taxaRecebimento;
+   const locatario = nd?.perfil?.modeloOperacao === "locatario";
++
+   const campoTaxa = (
+     <CampoPct label="Taxa de cartão/Pix" value={taxaCartaoPct} onChange={setTaxaCartaoPct}
+-      ajuda="A taxa que a maquininha ou o banco cobra em cima da venda. Confira no seu extrato — deixar em 0 faz o preço vir mais barato do que deveria." faq="markup-divisor" />
++      ajuda="A taxa que a maquininha ou o banco cobra em cima da venda. Confira no seu extrato — deixar em 0 faz o preço vir mais barato do que deveria." faq="taxa-media-recebimento" />
+   );
+   const campoPropria = locatario ? (
+     <CampoPct label="% que fica com o salão" value={comissaoPct} onChange={setComissaoPct}
+@@ -651,64 +753,90 @@
+       ajuda="Quanto do preço desse serviço vai pro profissional que atende, em %. Se você é sozinho(a), geralmente é 0 — o que sobra é seu pró-labore." faq="comissao-parceiros" />
+   );
+ 
+-  if (!equipe) {
++  const avisoComissao = !equipe && comissaoModo === "equipe" && (
++    <AvisoMediaIndisponivel>
++      Este serviço usava a comissão média da equipe, mas ela não está mais disponível (precisa de duas ou mais
++      pessoas atendendo no cadastro de Profissionais). Usando a comissão abaixo.
++    </AvisoMediaIndisponivel>
++  );
++  const avisoTaxa = !media && taxaModo === "negocio" && (
++    <AvisoMediaIndisponivel>
++      Este serviço usava a taxa média do negócio, mas ela não está disponível (as formas de pagamento, na aba
++      Negócio, precisam somar 100% das vendas). Usando a taxa abaixo.
++    </AvisoMediaIndisponivel>
++  );
++  // Só quando a taxa digitada no serviço é a que vale: com a média do negócio,
++  // um 0% é o que o usuário informou (ex.: recebe tudo em dinheiro).
++  const avisoTaxaZero = N(taxaCartaoPct) === 0 && (
++    <p className="text-[11px] flex items-start gap-1" style={{ color: t.warningText }}>
++      <Info size={12} className="mt-0.5 shrink-0" />
++      <span>Taxa de cartão em 0% — se você recebe por maquininha, dá uma olhada no extrato antes de finalizar.</span>
++    </p>
++  );
++  const dicaMedia = !media && (
++    <p className="text-[11px]" style={{ color: t.textMuted }}>
++      Recebe por várias formas (Pix, débito, crédito)? Na aba Negócio, em "Formas de pagamento", o app calcula a
++      taxa média para você.
++    </p>
++  );
++
++  // Sem nenhuma média disponível: os dois campos lado a lado.
++  if (!equipe && !media) {
+     return (
+       <div className="space-y-2">
+-        {comissaoModo === "equipe" && (
+-          <p className="text-[11px] flex items-start gap-1" style={{ color: t.warningText }}>
+-            <AlertTriangle size={12} className="mt-0.5 shrink-0" />
+-            Este serviço usava a comissão média da equipe, mas ela não está mais disponível (precisa de duas ou mais
+-            pessoas atendendo no cadastro de Profissionais). Usando a comissão abaixo.
+-          </p>
+-        )}
++        {avisoComissao}
++        {avisoTaxa}
+         <div className="grid grid-cols-2 gap-2">{campoPropria}{campoTaxa}</div>
++        {avisoTaxaZero}
++        {dicaMedia}
+       </div>
+     );
+   }
+ 
+-  const usandoEquipe = comissaoModo === "equipe";
+-  const opcoes = [
+-    { id: "equipe", label: `Média da equipe · ${fmtPct(equipe.pct)}` },
+-    { id: "propria", label: "Própria deste serviço" },
+-  ];
+-  return (
+-    <div className="space-y-3">
+-      <div>
+-        <span className="block text-xs font-medium leading-snug" style={{ color: t.textMuted }}>
+-          Comissão do profissional
+-          <Ajuda faq="comissao-parceiros" texto="Use a média da equipe quando qualquer pessoa pode fazer este serviço: o preço fica um só, e a comissão média é ponderada pelos atendimentos de cada uma. Escolha uma comissão própria se este serviço tem regra diferente." />
+-        </span>
+-        <div className="flex gap-1 p-1 rounded-lg mt-1" role="radiogroup" aria-label="Origem da comissão" style={{ background: t.surfaceAlt }}>
+-          {opcoes.map((o) => (
+-            <button key={o.id} type="button" role="radio" aria-checked={comissaoModo === o.id} onClick={() => setComissaoModo(o.id)}
+-              className="btn-press flex-1 rounded-md px-2 py-1.5 text-xs font-medium"
+-              style={{ background: comissaoModo === o.id ? t.surface : "transparent", color: comissaoModo === o.id ? t.text : t.textMuted, boxShadow: comissaoModo === o.id ? t.shadow : "none" }}>
+-              {o.label}
+-            </button>
+-          ))}
+-        </div>
+-      </div>
+-      {usandoEquipe ? (
+-        <div className="pop-in rounded-xl p-3 text-xs" style={{ background: t.primarySoft }}>
+-          <p style={{ color: t.text }}>
+-            {equipe.ponderada ? "Média ponderada pelos atendimentos de cada pessoa:" : "Média simples (falta o número de atendimentos de alguém no cadastro):"}
+-          </p>
+-          <ul className="mt-1.5 space-y-0.5">
+-            {equipe.participantes.map((pp) => (
+-              <li key={pp.id} className="flex justify-between gap-3" style={{ color: t.textMuted }}>
+-                <span className="min-w-0 truncate">{pp.nome}{pp.vinculo === "dono" ? " (dono/a)" : ""}</span>
+-                <span className="font-num shrink-0">{fmtPct(pp.pct)}{equipe.ponderada ? ` · ${pp.atendimentos} atend.` : ""}</span>
+-              </li>
+-            ))}
+-          </ul>
+-          <p className="mt-1.5 font-semibold" style={{ color: t.primaryText }}>Comissão usada no preço: {fmtPct(equipe.pct)}</p>
+-        </div>
++  // Com alguma média: cada bloco ocupa a linha inteira, como a margem logo abaixo.
++  const blocoComissao = equipe ? (
++    <div className="space-y-2">
++      <SeletorOrigem rotulo="Comissão do profissional" ariaLabel="Origem da comissão" faq="comissao-parceiros"
++        ajuda="Use a média da equipe quando qualquer pessoa pode fazer este serviço: o preço fica um só, e a comissão média é ponderada pelos atendimentos de cada uma. Escolha uma comissão própria se este serviço tem regra diferente."
++        valor={comissaoModo} onChange={setComissaoModo}
++        opcoes={[{ id: "equipe", label: `Média da equipe · ${fmtPct(equipe.pct)}` }, { id: "propria", label: "Própria deste serviço" }]} />
++      {comissaoModo === "equipe" ? (
++        <ComposicaoMedia
++          titulo={equipe.ponderada ? "Média ponderada pelos atendimentos de cada pessoa:" : "Média simples (falta o número de atendimentos de alguém no cadastro):"}
++          linhas={equipe.participantes.map((pp) => ({
++            id: pp.id, nome: `${pp.nome}${pp.vinculo === "dono" ? " (dono/a)" : ""}`,
++            valor: `${fmtPct(pp.pct)}${equipe.ponderada ? ` · ${pp.atendimentos} atend.` : ""}`,
++          }))}
++          total={`Comissão usada no preço: ${fmtPct(equipe.pct)}`} />
++      ) : campoPropria}
++    </div>
++  ) : (
++    <div className="space-y-2">{avisoComissao}{campoPropria}</div>
++  );
++
++  const blocoTaxa = media ? (
++    <div className="space-y-2">
++      <SeletorOrigem rotulo="Taxa de cartão/Pix" ariaLabel="Origem da taxa de cartão" faq="taxa-media-recebimento"
++        ajuda="A média do negócio vem das formas de pagamento informadas na aba Negócio, pesadas pela parte das vendas de cada uma. Use uma taxa própria se este serviço é pago de um jeito diferente do resto (ex.: pacotes sempre parcelados)."
++        valor={taxaModo} onChange={setTaxaModo}
++        opcoes={[{ id: "negocio", label: `Média do negócio · ${fmtPct(media.pct, 2)}` }, { id: "propria", label: "Própria deste serviço" }]} />
++      {taxaModo === "negocio" ? (
++        <ComposicaoMedia
++          titulo="Média ponderada pela parte das vendas de cada forma de pagamento:"
++          linhas={media.itens.map((i) => ({
++            id: i.id, nome: i.label,
++            valor: `${fmtPct(i.taxa, 2)} · ${fmtPct(i.participacao, 0)} das vendas`,
++          }))}
++          total={`Taxa usada no preço: ${fmtPct(media.pct, 2)}`} />
+       ) : (
+-        <div className="grid grid-cols-2 gap-2">{campoPropria}</div>
++        <>{campoTaxa}{avisoTaxaZero}</>
+       )}
+-      <div className="grid grid-cols-2 gap-2">{campoTaxa}</div>
+     </div>
++  ) : (
++    <div className="space-y-2">{avisoTaxa}{campoTaxa}{avisoTaxaZero}{dicaMedia}</div>
+   );
++
++  return <div className="space-y-4">{blocoComissao}{blocoTaxa}</div>;
+ }
+ 
+ /* Visão unificada de um serviço salvo, independente do modo em que foi   */
+@@ -905,7 +1033,7 @@
+ /* ======================================================================= */
+ /* App                                                                      */
+ /* ======================================================================= */
+-const VERSAO_APP = "v7.12";
++const VERSAO_APP = "v7.13";
+ const CHAVE_TEMA = "preco-justo:tema";
+ 
+ /* Rede de segurança: se qualquer aba travar por um motivo que eu não       */
+@@ -1714,6 +1842,75 @@
+   );
+ }
+ 
++/* Formas de pagamento do negócio (Bloco 5): que parte das vendas entra por  */
++/* cada forma e a taxa cobrada em cada uma. Em tabela, para dar para ler as  */
++/* cinco formas de uma vez e conferir se a soma fecha 100%.                  */
++function FormasPagamento({ recebimento, onChange }) {
++  const t = useT();
++  const calc = useMemo(() => calcularTaxaRecebimento(recebimento), [recebimento]);
++  const campoStyle = { background: t.surface, border: `1px solid ${t.border}`, color: t.text };
++  const entrada = (forma, campo, rotulo) => (
++    <div className="flex items-center gap-1">
++      <input className="w-full min-w-0 rounded-lg px-2 py-2 text-sm outline-none font-num text-right" style={campoStyle}
++        type="number" min="0" max={campo === "participacaoPct" ? "100" : "99"} step="any" inputMode="decimal"
++        value={recebimento?.[forma.id]?.[campo] ?? ""} placeholder="0"
++        aria-label={`${forma.label}: ${rotulo}`}
++        onChange={(e) => onChange(forma.id, campo, e.target.value)} />
++      <span className="text-xs" style={{ color: t.textMuted }}>%</span>
++    </div>
++  );
++  const falta = calc ? 100 - calc.soma : 100;
++  return (
++    <div className="space-y-3">
++      <div className="grid gap-x-2 gap-y-1.5 items-center" style={{ gridTemplateColumns: "minmax(0,1fr) 4.75rem 4.75rem" }}>
++        <span className="text-[11px] font-medium leading-snug self-end" style={{ color: t.textMuted }}>Forma</span>
++        <span className="text-[11px] font-medium leading-snug self-end" style={{ color: t.textMuted }}>% das vendas</span>
++        <span className="text-[11px] font-medium leading-snug self-end" style={{ color: t.textMuted }}>Taxa cobrada</span>
++        {FORMAS_PAGAMENTO.map((f) => (
++          <React.Fragment key={f.id}>
++            <span className="text-xs leading-snug" style={{ color: t.text }}>{f.label}</span>
++            {entrada(f, "participacaoPct", "% das vendas")}
++            {f.semTaxa
++              ? <span className="text-[11px] pl-1" style={{ color: t.textMuted }}>sem taxa</span>
++              : entrada(f, "taxaPct", "taxa cobrada")}
++          </React.Fragment>
++        ))}
++        <span className="text-xs font-semibold pt-1" style={{ color: t.text, borderTop: `1px solid ${t.border}` }}>Total</span>
++        <span className="text-xs font-semibold font-num pt-1 text-right pr-4"
++          style={{ color: calc && !calc.completo ? t.warningText : t.text, borderTop: `1px solid ${t.border}` }}>
++          {fmtPct(calc ? calc.soma : 0, 0)}
++        </span>
++        <span className="pt-1 self-stretch" style={{ borderTop: `1px solid ${t.border}` }} />
++      </div>
++
++      {calc && !calc.completo && (
++        <div className="pop-in flex gap-2 items-start rounded-xl p-2.5 text-xs" style={{ background: t.warningSoft, color: t.warningText }}>
++          <AlertTriangle size={14} className="mt-0.5 shrink-0" />
++          <span>
++            As formas de pagamento somam {fmtPct(calc.soma, 0)} das vendas.{" "}
++            {falta > 0 ? `Faltam ${fmtPct(falta, 0)} para fechar 100%.` : `Passou ${fmtPct(-falta, 0)} de 100%.`}{" "}
++            Até fechar, a Calculadora usa a taxa informada em cada serviço.
++          </span>
++        </div>
++      )}
++      {calc?.completo && (
++        <div className="pop-in rounded-xl p-3 text-xs space-y-1" style={{ background: t.primarySoft, color: t.primaryText }}>
++          <p className="font-semibold">Taxa média de recebimento: {fmtPct(calc.pct, 2)}</p>
++          <p style={{ color: t.text }}>
++            De cada {fmtBRL(100)} vendidos, cerca de {fmtBRL(calc.pct)} ficam com a maquininha e o banco. Na
++            Calculadora, cada serviço pode usar essa média no lugar de uma taxa própria.
++          </p>
++        </div>
++      )}
++      <ul className="text-[11px] space-y-1 list-disc pl-4" style={{ color: t.textMuted }}>
++        <li>As taxas estão no extrato ou no contrato da maquininha e do banco. O Pix pode ter taxa ou não, conforme o banco e a forma de receber: confira.</li>
++        <li>Crédito parcelado: se você antecipa o recebimento, use a taxa já somada à da antecipação.</li>
++        <li>Mensalidade ou aluguel da maquininha é um valor fixo por mês: lance nas Contas Fixas, não aqui.</li>
++      </ul>
++    </div>
++  );
++}
++
+ /* ======================================================================= */
+ /* Aba: Negócio                                                            */
+ /* ======================================================================= */
+@@ -1963,6 +2160,10 @@
+   const updateProfissional = (id, field, value) =>
+     setN({ ...n, profissionais: (n.profissionais || []).map((p) => (p.id === id ? { ...p, [field]: value } : p)) });
+ 
++  const updateRecebimento = (forma, campo, valor) =>
++    setN({ ...n, recebimento: { ...(n.recebimento || {}), [forma]: { ...(n.recebimento?.[forma] || {}), [campo]: valor } } });
++  const recebimentoCalc = useMemo(() => calcularTaxaRecebimento(n.recebimento), [n.recebimento]);
++
+   const cardStyle = { background: t.surface, border: `1px solid ${t.border}`, boxShadow: t.shadow };
+ 
+   // Onboarding aparece só até existir um segmento salvo — depois disso vira um card
+@@ -2172,6 +2373,18 @@
+           )}
+         </SecaoColapsavel>
+ 
++        <SecaoColapsavel
++          resumo={!recebimentoCalc ? "não informado" : recebimentoCalc.completo ? `taxa média ${fmtPct(recebimentoCalc.pct, 2)}` : `soma ${fmtPct(recebimentoCalc.soma, 0)} — incompleto`}
++          titulo="Formas de pagamento" icon={CreditCard} faq="taxa-media-recebimento"
++          ajuda="Quanto das suas vendas entra em dinheiro, Pix, débito e crédito, e quanto a maquininha ou o banco cobra em cada um. Com isso, o app calcula uma taxa média para usar no preço dos serviços.">
++          <p className="text-[11px] mb-2" style={{ color: t.textMuted }}>
++            Opcional. Informe que parte das vendas entra por cada forma de pagamento e a taxa cobrada em cada uma. O app
++            calcula a taxa média, pesando cada taxa pela parte das vendas. Uma estimativa já ajuda: dá para ajustar depois
++            com o extrato do mês.
++          </p>
++          <FormasPagamento recebimento={n.recebimento || {}} onChange={updateRecebimento} />
++        </SecaoColapsavel>
++
+         <SecaoColapsavel resumo={`${(n.insumosCompartilhados || []).length} cadastrado(s)`} titulo="Insumos compartilhados entre serviços" icon={Sparkles}>
+           <p className="text-[11px] mb-2" style={{ color: t.textMuted }}>
+             Coisas como shampoo, touca ou luva costumam ser usadas em vários serviços. Cadastre aqui uma vez só — depois,
+@@ -2377,6 +2590,9 @@
+             {nd.comissaoEquipe && (
+               <ResumoItem label="Comissão média da equipe" valor={fmtPct(nd.comissaoEquipe.pct)} />
+             )}
++            {nd.taxaRecebimento && (
++              <ResumoItem label="Taxa média de recebimento" valor={fmtPct(nd.taxaRecebimento.pct, 2)} />
++            )}
+           </div>
+           {nd.receitaAluguelCadeiras > 0 && (
+             <p className="text-[11px] mt-3" style={{ color: "rgba(255,255,255,.85)" }}>
+@@ -2931,7 +3147,7 @@
+   const somaPrecos = itensSelecionados.reduce((s, it) => s + it.calc.preco, 0);
+   if (somaPrecos <= 0) return { status: "sem-dado" };
+   const comissaoPctPonderada = itensSelecionados.reduce((s, it) => s + comissaoEfetiva(it, nd) * it.calc.preco, 0) / somaPrecos;
+-  const taxaCartaoPctPonderada = itensSelecionados.reduce((s, it) => s + N(it.taxaCartaoPct) * it.calc.preco, 0) / somaPrecos;
++  const taxaCartaoPctPonderada = itensSelecionados.reduce((s, it) => s + taxaEfetiva(it, nd) * it.calc.preco, 0) / somaPrecos;
+ 
+   const margensEfetivas = itensSelecionados.map((it) => ({
+     nome: it.nome,
+@@ -3431,6 +3647,8 @@
+     comissaoPct: "0", taxaCartaoPct: "0", margemPct: "20", atendimentosMes: "", horasAtendimento: "1", precoCobrado: "",
+     // Serviço novo usa a comissão média da equipe quando ela existe (Bloco 4).
+     comissaoModo: nd?.comissaoEquipe ? "equipe" : "propria",
++    // ...e a taxa média de recebimento do negócio, quando ela existe (Bloco 5).
++    taxaModo: nd?.taxaRecebimento ? "negocio" : "propria",
+   };
+ 
+   const [modo, setModo] = useState("descobrir"); // 'descobrir' | 'ja-tenho'
+@@ -3443,6 +3661,7 @@
+   const [comissaoPct, setComissaoPct] = useState(vazio.comissaoPct);
+   const [comissaoModo, setComissaoModo] = useState(vazio.comissaoModo);
+   const [taxaCartaoPct, setTaxaCartaoPct] = useState(vazio.taxaCartaoPct);
++  const [taxaModo, setTaxaModo] = useState(vazio.taxaModo);
+   const [margemPct, setMargemPct] = useState(vazio.margemPct);
+   const [atendimentosMes, setAtendimentosMes] = useState(vazio.atendimentosMes);
+   const [horasAtendimento, setHorasAtendimento] = useState(vazio.horasAtendimento);
+@@ -3456,14 +3675,15 @@
+ 
+   // "sujo" = tem algo digitado que ainda não foi salvo neste serviço.
+   const rascunhoAtual = useMemo(() => ({
+-    nome: nomeServico, categoria, tipo, custosVariaveis, comissaoPct, comissaoModo, taxaCartaoPct, margemPct,
++    nome: nomeServico, categoria, tipo, custosVariaveis, comissaoPct, comissaoModo, taxaCartaoPct, taxaModo, margemPct,
+     atendimentosMes, horasAtendimento, modo, precoCobrado,
+-  }), [nomeServico, categoria, tipo, custosVariaveis, comissaoPct, comissaoModo, taxaCartaoPct, margemPct, atendimentosMes, horasAtendimento, modo, precoCobrado]);
++  }), [nomeServico, categoria, tipo, custosVariaveis, comissaoPct, comissaoModo, taxaCartaoPct, taxaModo, margemPct, atendimentosMes, horasAtendimento, modo, precoCobrado]);
+   const rascunhoBase = useMemo(() => servicoEmEdicao
+     ? {
+         nome: servicoEmEdicao.nome, categoria: servicoEmEdicao.categoria || "", tipo: servicoEmEdicao.tipo || "servico", custosVariaveis: servicoEmEdicao.custosVariaveis,
+         comissaoPct: String(servicoEmEdicao.comissaoPct), comissaoModo: servicoEmEdicao.comissaoModo || "propria",
+-        taxaCartaoPct: String(servicoEmEdicao.taxaCartaoPct), margemPct: String(servicoEmEdicao.margemPct),
++        taxaCartaoPct: String(servicoEmEdicao.taxaCartaoPct), taxaModo: servicoEmEdicao.taxaModo || "propria",
++        margemPct: String(servicoEmEdicao.margemPct),
+         atendimentosMes: String(servicoEmEdicao.atendimentosMes), horasAtendimento: String(servicoEmEdicao.horasPorAtendimento),
+         modo: servicoEmEdicao.modo === "ja-tenho" ? "ja-tenho" : "descobrir",
+         precoCobrado: servicoEmEdicao.precoCobrado !== undefined && servicoEmEdicao.precoCobrado !== null ? String(servicoEmEdicao.precoCobrado) : "",
+@@ -3494,6 +3714,7 @@
+       setComissaoPct(String(servicoEmEdicao.comissaoPct));
+       setComissaoModo(servicoEmEdicao.comissaoModo || "propria");
+       setTaxaCartaoPct(String(servicoEmEdicao.taxaCartaoPct));
++      setTaxaModo(servicoEmEdicao.taxaModo || "propria");
+       setMargemPct(String(servicoEmEdicao.margemPct));
+       setAtendimentosMes(String(servicoEmEdicao.atendimentosMes));
+       setHorasAtendimento(String(servicoEmEdicao.horasPorAtendimento));
+@@ -3512,7 +3733,7 @@
+     setModo("descobrir");
+     setPassoWizard(1);
+     setCustosVariaveis(vazio.custosVariaveis.map((i) => ({ ...i, id: uid() })));
+-    setComissaoPct(vazio.comissaoPct); setComissaoModo(vazio.comissaoModo); setTaxaCartaoPct(vazio.taxaCartaoPct); setMargemPct(vazio.margemPct);
++    setComissaoPct(vazio.comissaoPct); setComissaoModo(vazio.comissaoModo); setTaxaCartaoPct(vazio.taxaCartaoPct); setTaxaModo(vazio.taxaModo); setMargemPct(vazio.margemPct);
+     setAtendimentosMes(vazio.atendimentosMes); setHorasAtendimento(vazio.horasAtendimento);
+     setNomeServico(vazio.nome); setCategoria(vazio.categoria); setTipo(vazio.tipo); setConfirmandoExclusaoForm(false);
+     setPrecoCobrado(vazio.precoCobrado); setPrecoCobradoDebounced(vazio.precoCobrado);
+@@ -3570,23 +3791,25 @@
+ 
+   const resultadoA = useMemo(
+     () => calcularServico({
+-      custosVariaveis, comissaoPct, comissaoModo, taxaCartaoPct, margemPct,
++      custosVariaveis, comissaoPct, comissaoModo, taxaCartaoPct, taxaModo, margemPct,
+       horasPorAtendimento: horasAtendimento, atendimentosMes: N(atendimentosMes),
+     }, nd),
+-    [custosVariaveis, comissaoPct, comissaoModo, taxaCartaoPct, margemPct, horasAtendimento, atendimentosMes, nd]
++    [custosVariaveis, comissaoPct, comissaoModo, taxaCartaoPct, taxaModo, margemPct, horasAtendimento, atendimentosMes, nd]
+   );
+ 
+   const resultadoB = useMemo(
+     () => calcularReverso({
+-      custosVariaveis, comissaoPct, comissaoModo, taxaCartaoPct, precoCobrado: precoCobradoDebounced,
++      custosVariaveis, comissaoPct, comissaoModo, taxaCartaoPct, taxaModo, precoCobrado: precoCobradoDebounced,
+       horasPorAtendimento: horasAtendimento, atendimentosMes: N(atendimentosMes), margemMetaPct: margemPct,
+     }, nd),
+-    [custosVariaveis, comissaoPct, comissaoModo, taxaCartaoPct, precoCobradoDebounced, horasAtendimento, atendimentosMes, margemPct, nd]
++    [custosVariaveis, comissaoPct, comissaoModo, taxaCartaoPct, taxaModo, precoCobradoDebounced, horasAtendimento, atendimentosMes, margemPct, nd]
+   );
+ 
+   const resultadoAtivo = modo === "ja-tenho" ? resultadoB : resultadoA;
+   // Comissão que de fato entra no preço (média da equipe ou a própria do serviço).
+   const comissaoUsada = comissaoEfetiva({ comissaoPct, comissaoModo }, nd);
++  // Idem para a taxa de cartão (média do negócio ou a própria do serviço).
++  const taxaUsada = taxaEfetiva({ taxaCartaoPct, taxaModo }, nd);
+ 
+   // "Preço salvo" recalculado ao vivo com os parâmetros ORIGINAIS (sem as edições em
+   // andamento), no MODO em que o serviço foi salvo, contra a config. atual do negócio.
+@@ -3604,7 +3827,7 @@
+     criadoEm: (!idNovo && servicoEmEdicao) ? servicoEmEdicao.criadoEm : Date.now(),
+     editadoEm: Date.now(),
+     modo,
+-    custosVariaveis, comissaoPct: N(comissaoPct), comissaoModo, taxaCartaoPct: N(taxaCartaoPct), margemPct: N(margemPct),
++    custosVariaveis, comissaoPct: N(comissaoPct), comissaoModo, taxaCartaoPct: N(taxaCartaoPct), taxaModo, margemPct: N(margemPct),
+     horasPorAtendimento: N(horasAtendimento), atendimentosMes: N(atendimentosMes),
+     precoCobrado: modo === "ja-tenho" ? N(precoCobradoDebounced) : null,
+     precoConfirmado: resultadoAtivo.status === "ok" ? resultadoAtivo.preco : null,
+@@ -3754,13 +3977,8 @@
+ 
+             <BlocoComissaoETaxa nd={nd} comissaoPct={comissaoPct} setComissaoPct={setComissaoPct}
+               comissaoModo={comissaoModo} setComissaoModo={setComissaoModo}
+-              taxaCartaoPct={taxaCartaoPct} setTaxaCartaoPct={setTaxaCartaoPct} />
+-            {N(taxaCartaoPct) === 0 && (
+-              <p className="text-[11px] -mt-2 flex items-start gap-1" style={{ color: t.warningText }}>
+-                <Info size={12} className="mt-0.5 shrink-0" />
+-                Taxa de cartão em 0% — se você recebe por maquininha, dá uma olhada no extrato antes de finalizar.
+-              </p>
+-            )}
++              taxaCartaoPct={taxaCartaoPct} setTaxaCartaoPct={setTaxaCartaoPct}
++              taxaModo={taxaModo} setTaxaModo={setTaxaModo} />
+             <CampoPct label="Margem de lucro desejada (meta)" value={margemPct} onChange={setMargemPct}
+               ajuda="Quanto você quer que sobre de lucro de verdade, depois de pagar tudo — não é o preço final, é a fatia que fica com você." faq="margem-contribuicao" />
+ 
+@@ -3856,7 +4074,7 @@
+                 )}
+                 {resultadoB.status === "ok" && (
+                   <SimuladorSensibilidade
+-                    precoBase={resultadoB.preco} custosVariaveis={custosVariaveis} comissaoPct={comissaoUsada} taxaCartaoPct={taxaCartaoPct}
++                    precoBase={resultadoB.preco} custosVariaveis={custosVariaveis} comissaoPct={comissaoUsada} taxaCartaoPct={taxaUsada}
+                     horasPorAtendimento={horasAtendimento} atendimentosMes={N(atendimentosMes)} nd={nd}
+                   />
+                 )}
+@@ -3993,13 +4211,8 @@
+             <div className="space-y-4 fade-up">
+               <BlocoComissaoETaxa nd={nd} comissaoPct={comissaoPct} setComissaoPct={setComissaoPct}
+                 comissaoModo={comissaoModo} setComissaoModo={setComissaoModo}
+-                taxaCartaoPct={taxaCartaoPct} setTaxaCartaoPct={setTaxaCartaoPct} />
+-              {N(taxaCartaoPct) === 0 && (
+-                <p className="text-[11px] -mt-2 flex items-start gap-1" style={{ color: t.warningText }}>
+-                  <Info size={12} className="mt-0.5 shrink-0" />
+-                  Taxa de cartão em 0% — se você recebe por maquininha, dá uma olhada no extrato antes de finalizar.
+-                </p>
+-              )}
++                taxaCartaoPct={taxaCartaoPct} setTaxaCartaoPct={setTaxaCartaoPct}
++                taxaModo={taxaModo} setTaxaModo={setTaxaModo} />
+               {modo === "descobrir" ? (
+                 <CampoPct label="Margem de lucro desejada (meta)" value={margemPct} onChange={setMargemPct}
+                   ajuda="Quanto você quer que sobre de lucro de verdade, depois de pagar tudo — não é o preço final, é a fatia que fica com você." faq="margem-contribuicao" />
+@@ -4056,7 +4269,7 @@
+                   )}
+                   {resultadoB.status === "ok" && (
+                     <SimuladorSensibilidade
+-                      precoBase={resultadoB.preco} custosVariaveis={custosVariaveis} comissaoPct={comissaoUsada} taxaCartaoPct={taxaCartaoPct}
++                      precoBase={resultadoB.preco} custosVariaveis={custosVariaveis} comissaoPct={comissaoUsada} taxaCartaoPct={taxaUsada}
+                       horasPorAtendimento={horasAtendimento} atendimentosMes={N(atendimentosMes)} nd={nd}
+                     />
+                   )}
+@@ -4397,9 +4610,9 @@
+         "Margem desejada (%)", "Horas/atend.", "Atendimentos/mês", "Margem contrib. unit. (R$)", "Lucro projetado/mês (R$)", "Status"],
+       ...servicosCalc.map((s) => (
+         s.calc.status === "ok"
+-          ? [s.nome, s.calc.preco, s.calc.totalVariaveis, comissaoEfetiva(s, nd), s.taxaCartaoPct, nd.impostoPct,
++          ? [s.nome, s.calc.preco, s.calc.totalVariaveis, comissaoEfetiva(s, nd), taxaEfetiva(s, nd), nd.impostoPct,
+              s.margemPct, s.horasPorAtendimento, s.atendimentosMes, s.calc.margemContribuicaoUnitaria, s.calc.lucroProjetadoMes, "ok"]
+-          : [s.nome, null, null, comissaoEfetiva(s, nd), s.taxaCartaoPct, nd.impostoPct, s.margemPct, s.horasPorAtendimento,
++          : [s.nome, null, null, comissaoEfetiva(s, nd), taxaEfetiva(s, nd), nd.impostoPct, s.margemPct, s.horasPorAtendimento,
+              s.atendimentosMes, null, null, "inválido com a config. atual — revisar na Calculadora"]
+       )),
+     ]);
+@@ -5123,7 +5336,7 @@
+       const calc = calcularParaExibicao(s, nd);
+       somaMateriais += qtd * calc.totalVariaveis;
+       const receitaEstimada = qtd * calc.preco;
+-      somaComissaoTaxa += receitaEstimada * ((comissaoEfetiva(s, nd) + N(s.taxaCartaoPct)) / 100);
++      somaComissaoTaxa += receitaEstimada * ((comissaoEfetiva(s, nd) + taxaEfetiva(s, nd)) / 100);
+     });
+     custosVariaveisReais = somaMateriais + somaComissaoTaxa;
+   }
+@@ -5207,7 +5420,7 @@
+       const receita = quantidade * valorUnitarioUsado;
+       const custoMaterial = quantidade * calc.totalVariaveis;
+       const custoComissao = receita * (comissaoEfetiva(s, nd) / 100);
+-      const custoTaxaCartao = receita * (N(s.taxaCartaoPct) / 100);
++      const custoTaxaCartao = receita * (taxaEfetiva(s, nd) / 100);
+       return { servicoId: s.id, nome: s.nome, quantidade, receita, valorUnitarioUsado, estimado: valorUnitarioReal == null, custoMaterial, custoComissao, custoTaxaCartao };
+     }).filter(Boolean);
+   }, [mostrarPorServico, detalhe, servicosValidos, nd]);
+@@ -5601,7 +5814,7 @@
+     const receita = d.valorReal != null ? d.valorReal : d.quantidade * calc.preco;
+     const custoMaterial = d.quantidade * calc.totalVariaveis;
+     const custoComissao = receita * (comissaoEfetiva(servico, nd) / 100);
+-    const custoTaxaCartao = receita * (N(servico.taxaCartaoPct) / 100);
++    const custoTaxaCartao = receita * (taxaEfetiva(servico, nd) / 100);
+     const custoImposto = receita * (nd.impostoPct / 100);
+     resultado[id] = {
+       nome: servico.nome, categoria: servico.categoria || "Outros", tipo: servico.tipo || "servico", quantidade: d.quantidade,
+@@ -6308,6 +6521,16 @@
+         ],
+       },
+       {
++        id: "taxa-media-recebimento",
++        pergunta: "Como calcular a taxa de cartão quando eu recebo por várias formas de pagamento?",
++        blocos: [
++          { tipo: "texto", texto: `Cada forma de pagamento tem um custo diferente: dinheiro não tem taxa, e Pix, débito, crédito à vista e crédito parcelado podem ter taxas diferentes, que mudam de uma maquininha e de um banco para outro. Usar uma taxa só, "no chute", faz o preço sair errado para mais ou para menos.` },
++          { tipo: "texto", texto: `O jeito correto é a média ponderada: cada taxa pesa conforme a parte das vendas que entra por aquela forma. Assim, uma taxa alta numa forma pouco usada pesa pouco, e uma taxa baixa na forma mais usada pesa muito. A taxa entra na fórmula do markup divisor como percentual sobre o preço, junto da comissão e do imposto, porque ela é cobrada sobre o valor que o cliente paga.` },
++          { tipo: "formula", texto: `Taxa média = Σ (% das vendas na forma × taxa da forma) ÷ 100` },
++          { tipo: "exemplo", texto: `Números só para ilustrar: se 20% das vendas entram em dinheiro (sem taxa), 40% em Pix sem taxa, 25% no débito a 1,6% e 15% no crédito a 3%, a taxa média é (20 × 0 + 40 × 0 + 25 × 1,6 + 15 × 3) ÷ 100 = 0,85%. Usar 3% em todos os serviços, "porque é a taxa do cartão", deixaria o preço mais alto do que precisa. A mensalidade da maquininha não entra aqui: ela é um custo fixo.` },
++        ],
++      },
++      {
+         id: "tempo-de-cadeira",
+         pergunta: "Por que o tempo de cadeira influencia tanto o preço quanto um material caro?",
+         blocos: [
