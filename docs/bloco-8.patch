@@ -1,0 +1,1578 @@
+--- a/src/App.jsx
++++ b/src/App.jsx
+@@ -13,6 +13,14 @@
+ } from "lucide-react";
+ import { createPortal } from "react-dom";
+ import * as XLSX from "xlsx";
++import {
++  fmtBRL, fmtPct, N, normalizarValorBR, ANEXO_III, ANEXO_V,
++  aliquotaEfetiva, VINCULOS_PROFISSIONAL, vinculoDe, calcularComissaoEquipe, comissaoEfetiva, FORMAS_PAGAMENTO,
++  calcularTaxaRecebimento, taxaEfetiva, computeNegocioDerivado, converterParaDias, precoUnitarioItem, custoMensalInsumoCompartilhado,
++  calcularValorItemVariavel, somaCustosVariaveis, calcularServico, SEMANAS_POR_MES_CALENDARIO, pontoEquilibrioSemanal, calcularReverso,
++  calcularUnificado, calcularParaExibicao, montarDREMensal, montarDRE, calcularIndicadoresGerenciais, calcularPrecoMinimoPacote,
++  distanciaKm, mediana, ultimoPrecoPorConcorrente, pisoDoServico,
++} from "./calculos.js";
+ 
+ /* ======================================================================= */
+ /* TOKENS — claro e escuro. Hex exatos do brandbook em backgrounds, marca  */
+@@ -56,35 +64,7 @@
+ /* ======================================================================= */
+ /* Utilitários                                                             */
+ /* ======================================================================= */
+-const fmtBRL = (v) =>
+-  new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(
+-    Number.isFinite(v) ? v : 0
+-  );
+-// Percentual no padrão brasileiro (vírgula decimal), igual ao fmtBRL — antes saía "6.00%"
+-// ao lado de "R$ 8.000,00" na mesma frase.
+-const fmtPct = (v, casas = 1) =>
+-  `${(Number.isFinite(v) ? v : 0).toLocaleString("pt-BR", { minimumFractionDigits: casas, maximumFractionDigits: casas })}%`;
+ const uid = () => Math.random().toString(36).slice(2, 10);
+-const N = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
+-
+-// Lê um valor digitado no padrão brasileiro e devolve no formato que N() entende
+-// ("2500.5"). Antes, "2.500" virava R$ 2,50 e "2.500,00" virava R$ 0,00 sem aviso.
+-// Regras: com vírgula, ela é o decimal e os pontos são milhar ("2.500,50" → 2500.5);
+-// sem vírgula, vários pontos são milhar ("1.234.567"); um ponto só seguido de
+-// exatamente 3 dígitos também é milhar ("2.500" → 2500), porque centavos têm 2
+-// dígitos; nos demais casos o ponto é decimal ("2.5", "2.50"). Preserva valores
+-// parciais durante a digitação ("2500," → "2500.").
+-function normalizarValorBR(texto) {
+-  const limpo = String(texto ?? "").replace(/[^\d.,]/g, "");
+-  if (limpo.includes(",")) {
+-    const [inteiro, ...resto] = limpo.split(",");
+-    return `${inteiro.replace(/\./g, "")}.${resto.join("")}`;
+-  }
+-  const pontos = (limpo.match(/\./g) || []).length;
+-  if (pontos > 1) return limpo.replace(/\./g, "");
+-  if (pontos === 1 && /^\d+\.\d{3}$/.test(limpo)) return limpo.replace(".", "");
+-  return limpo;
+-}
+ 
+ async function comRetry(fn, tentativas = 1) {
+   let ultimoErro;
+@@ -199,35 +179,6 @@
+ const MESES = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
+ 
+ /* ======================================================================= */
+-/* Simples Nacional — tabelas reais, vigentes 2026 (LC 123/2006).          */
+-/* ======================================================================= */
+-const ANEXO_III = [
+-  { limite: 180000, aliq: 0.06, pd: 0 },
+-  { limite: 360000, aliq: 0.112, pd: 9360 },
+-  { limite: 720000, aliq: 0.135, pd: 17640 },
+-  { limite: 1800000, aliq: 0.16, pd: 35640 },
+-  { limite: 3600000, aliq: 0.21, pd: 125640 },
+-  { limite: 4800000, aliq: 0.33, pd: 648000 },
+-];
+-const ANEXO_V = [
+-  { limite: 180000, aliq: 0.155, pd: 0 },
+-  { limite: 360000, aliq: 0.18, pd: 4500 },
+-  { limite: 720000, aliq: 0.195, pd: 9900 },
+-  { limite: 1800000, aliq: 0.205, pd: 17100 },
+-  { limite: 3600000, aliq: 0.23, pd: 62100 },
+-  { limite: 4800000, aliq: 0.305, pd: 540000 },
+-];
+-
+-function aliquotaEfetiva(rbt12, tabela) {
+-  if (rbt12 <= 0) return { faixaIdx: 0, aliqNominal: tabela[0].aliq, pd: 0, aliqEfetiva: tabela[0].aliq };
+-  if (rbt12 > 4800000) return null;
+-  const idx = tabela.findIndex((f) => rbt12 <= f.limite);
+-  const faixa = tabela[idx];
+-  const efetiva = (rbt12 * faixa.aliq - faixa.pd) / rbt12;
+-  return { faixaIdx: idx, aliqNominal: faixa.aliq, pd: faixa.pd, aliqEfetiva: Math.max(0, efetiva) };
+-}
+-
+-/* ======================================================================= */
+ /* Dados reais — Google Places, coletados nesta sessão (Feira de Santana)  */
+ /* ======================================================================= */
+ /* A data exata da coleta não foi registrada no código. O que dá pra       */
+@@ -383,300 +334,6 @@
+   return { negocio, servicos };
+ }
+ 
+-/* Vínculo de cada profissional cadastrado (Bloco 4). Cadastros antigos não  */
+-/* têm o campo: são tratados como comissionados, mas só entram na média de   */
+-/* comissão quando a comissão for informada.                                 */
+-const VINCULOS_PROFISSIONAL = [
+-  { id: "comissao", label: "Comissionado(a)" },
+-  { id: "dono", label: "Dono(a) / sem comissão" },
+-  { id: "aluguel", label: "Aluga cadeira" },
+-];
+-const vinculoDe = (p) => p?.vinculo || "comissao";
+-
+-/* Comissão média da equipe, ponderada pelos atendimentos de cada pessoa que */
+-/* atende pelo salão (comissionados e dono). Quem aluga cadeira fica de fora: */
+-/* o serviço dele não é receita do salão. Se faltar o número de atendimentos */
+-/* de alguém, usa média simples e avisa (ponderada: false).                  */
+-function calcularComissaoEquipe(profissionais) {
+-  const participantes = (profissionais || [])
+-    .filter((p) => p.ativo !== false && (p.nome || "").trim())
+-    .filter((p) => (vinculoDe(p) === "comissao" && String(p.comissaoPct ?? "").trim() !== "") || vinculoDe(p) === "dono")
+-    .map((p) => ({
+-      id: p.id, nome: p.nome.trim(), vinculo: vinculoDe(p),
+-      pct: vinculoDe(p) === "dono" ? 0 : Math.min(99, Math.max(0, N(p.comissaoPct))),
+-      atendimentos: Math.max(0, N(p.atendimentosMes)),
+-    }));
+-  const temComissionado = participantes.some((p) => p.vinculo === "comissao");
+-  if (participantes.length < 2 || !temComissionado) return null;
+-  const ponderada = participantes.every((p) => p.atendimentos > 0);
+-  const somaPesos = ponderada ? participantes.reduce((s, p) => s + p.atendimentos, 0) : participantes.length;
+-  const pct = participantes.reduce((s, p) => s + p.pct * (ponderada ? p.atendimentos : 1), 0) / somaPesos;
+-  return { pct, ponderada, participantes };
+-}
+-
+-/* Comissão que de fato entra no preço de um serviço: a média da equipe, se  */
+-/* o serviço foi marcado para usá-la e ela existe; senão, a do próprio       */
+-/* serviço. Serviços salvos antes do Bloco 4 não têm comissaoModo e mantêm   */
+-/* a comissão que já tinham.                                                 */
+-function comissaoEfetiva(servico, nd) {
+-  if (servico?.comissaoModo === "equipe" && nd?.comissaoEquipe) return nd.comissaoEquipe.pct;
+-  return N(servico?.comissaoPct);
+-}
+-
+-/* Formas de pagamento (Bloco 5). Cada forma tem a parte das vendas que     */
+-/* entra por ela e a taxa cobrada. Dinheiro não tem taxa. Nenhuma taxa vem   */
+-/* preenchida: cada maquininha e cada banco cobra diferente, e o número      */
+-/* certo está no extrato ou no contrato do próprio usuário.                  */
+-const FORMAS_PAGAMENTO = [
+-  { id: "dinheiro", label: "Dinheiro", semTaxa: true },
+-  { id: "pix", label: "Pix" },
+-  { id: "debito", label: "Débito" },
+-  { id: "credito", label: "Crédito à vista" },
+-  { id: "parcelado", label: "Crédito parcelado" },
+-];
+-
+-/* Taxa média de recebimento: média das taxas ponderada pela parte das vendas */
+-/* de cada forma. Só vale como média do negócio quando as partes somam 100%  */
+-/* (completo); antes disso, a tela mostra quanto falta.                      */
+-function calcularTaxaRecebimento(recebimento) {
+-  const itens = FORMAS_PAGAMENTO.map((f) => {
+-    const r = recebimento?.[f.id] || {};
+-    return {
+-      id: f.id, label: f.label,
+-      participacao: Math.max(0, N(r.participacaoPct)),
+-      taxa: f.semTaxa ? 0 : Math.min(99, Math.max(0, N(r.taxaPct))),
+-    };
+-  }).filter((i) => i.participacao > 0);
+-  if (itens.length === 0) return null;
+-  const soma = itens.reduce((s, i) => s + i.participacao, 0);
+-  const pct = itens.reduce((s, i) => s + i.participacao * i.taxa, 0) / soma;
+-  return { pct, soma, completo: Math.abs(soma - 100) <= 0.5, itens };
+-}
+-
+-/* Taxa de cartão que de fato entra no preço de um serviço: a média do       */
+-/* negócio, se o serviço foi marcado para usá-la e ela existe; senão, a do   */
+-/* próprio serviço. Serviços salvos antes do Bloco 5 não têm taxaModo e      */
+-/* mantêm a taxa que já tinham.                                              */
+-function taxaEfetiva(servico, nd) {
+-  if (servico?.taxaModo === "negocio" && nd?.taxaRecebimento) return nd.taxaRecebimento.pct;
+-  return N(servico?.taxaCartaoPct);
+-}
+-
+-function computeNegocioDerivado(n) {
+-  const custosFixosSoma = n.custosFixos.reduce((s, i) => s + N(i.valor), 0);
+-  const proLabore = N(n.proLabore);
+-  const meiDas = n.regime === "mei" ? N(n.meiDas) : 0;
+-  const custoFixoTotal = custosFixosSoma + proLabore + meiDas;
+-  const custoFixoNaoCaixa = n.custosFixos.filter((i) => i.semCaixa).reduce((s, i) => s + N(i.valor), 0);
+-  const horasTotais = N(n.diasMes) * N(n.horasDia) * Math.max(1, N(n.numeroProfissionais) || 1);
+-  // Aluguel de cadeiras recebido (lado do dono): é receita do salão, não custo
+-  // negativo — aparece em linha própria no DRE. Para o preço, reduz o custo
+-  // fixo que os serviços do próprio salão precisam cobrir.
+-  const receitaAluguelCadeiras = (n.profissionais || [])
+-    .filter((p) => p.ativo !== false && vinculoDe(p) === "aluguel")
+-    .reduce((s, p) => s + N(p.aluguelMes), 0);
+-  const custoFixoLiquido = Math.max(0, custoFixoTotal - receitaAluguelCadeiras);
+-  const custoFixoPorHora = horasTotais > 0 ? custoFixoLiquido / horasTotais : 0;
+-  const comissaoEquipe = calcularComissaoEquipe(n.profissionais);
+-  const recebimento = calcularTaxaRecebimento(n.recebimento);
+-  const taxaRecebimento = recebimento?.completo ? recebimento : null;
+-
+-  let impostoPct = 0, fatorR = null, anexoUsado = null, aliqInfo = null;
+-  if (n.regime === "simples") {
+-    const rbt12 = N(n.rbt12);
+-    const folha12 = N(n.folha12);
+-    fatorR = rbt12 > 0 ? folha12 / rbt12 : 0;
+-    const elegivelIII = n.atividadeSempreAnexoIII || fatorR >= 0.28;
+-    anexoUsado = elegivelIII ? "III" : "V";
+-    aliqInfo = aliquotaEfetiva(rbt12, elegivelIII ? ANEXO_III : ANEXO_V);
+-    impostoPct = aliqInfo ? aliqInfo.aliqEfetiva * 100 : 0;
+-  }
+-
+-  return {
+-    custosFixosSoma, proLabore, meiDas, custoFixoTotal, custoFixoNaoCaixa,
+-    receitaAluguelCadeiras, custoFixoLiquido, comissaoEquipe, taxaRecebimento,
+-    horasTotais, custoFixoPorHora, impostoPct, fatorR, anexoUsado, aliqInfo,
+-    numeroProfissionais: Math.max(1, N(n.numeroProfissionais) || 1),
+-    diasMes: N(n.diasMes),
+-    insumosCompartilhados: n.insumosCompartilhados || [],
+-    perfil: n.perfil || null,
+-    regime: n.regime,
+-    configurado: n.custosFixos.length > 0 && custoFixoTotal > 0 && horasTotais > 0,
+-  };
+-}
+-
+-/* ======================================================================= */
+-/* Custo variável "inteligente" — converte o jeito que o profissional      */
+-/* realmente pensa (duração de uma compra, ou quanto usa por atendimento)  */
+-/* no valor por atendimento que o motor de precificação já esperava. Três  */
+-/* modos coexistem no mesmo item, escolhidos por item:                     */
+-/*   'direto'  — valor por atendimento digitado à mão (comportamento       */
+-/*                original, mantido por compatibilidade com o que já foi   */
+-/*                salvo antes desta versão).                               */
+-/*   'duracao' — ex: "paguei R$80 num galão que dura 45 dias" — usa o      */
+-/*                volume de atendimentos do próprio serviço para converter.*/
+-/*   'unidade' — ex: "a caixa de 100 toucas custou R$40, uso 1 por         */
+-/*                atendimento" — divide o preço da compra pela quantidade  */
+-/*                comprada e multiplica pelo consumo unitário.             */
+-/* ======================================================================= */
+-function converterParaDias(valor, unidade) {
+-  const v = N(valor);
+-  if (unidade === "semanas") return v * 7;
+-  if (unidade === "meses") return v * 30;
+-  return v; // "dias"
+-}
+-
+-function precoUnitarioItem(item) {
+-  const qtd = N(item.quantidadeComprada);
+-  return qtd > 0 ? N(item.valorCompra) / qtd : 0;
+-}
+-
+-/* Custo mensal total de um insumo compartilhado (independe de quem usa) —   */
+-/* só existe pra insumo tipo 'duracao'; tipo 'unidade' não decai com o       */
+-/* tempo, então não tem "custo mensal" próprio, só preço por unidade.        */
+-function custoMensalInsumoCompartilhado(insumo, diasMesNegocio) {
+-  const duracaoDias = converterParaDias(insumo.duracaoValor, insumo.duracaoUnidade);
+-  const dm = N(diasMesNegocio);
+-  if (duracaoDias <= 0 || dm <= 0) return 0;
+-  return (N(insumo.valorCompra) * dm) / duracaoDias;
+-}
+-
+-function calcularValorItemVariavel(item, { atendimentosMes, diasMesNegocio, insumosCompartilhados }) {
+-  if (item.modo === "compartilhado") {
+-    const insumo = (insumosCompartilhados || []).find((i) => i.id === item.insumoId);
+-    if (!insumo) return 0;
+-    if (insumo.modo === "unidade") {
+-      // consumo direto: cada atendimento realmente gasta sua própria unidade —
+-      // não precisa de alocação percentual, não tem risco de contar em dobro.
+-      return precoUnitarioItem(insumo) * N(item.usoPorAtendimento);
+-    }
+-    // insumo tipo 'duracao': o custo dele é por TEMPO, não por consumo — se dois
+-    // serviços puxassem 100% cada um, o insumo seria contado em dobro no DRE. Por
+-    // isso cada serviço aloca um % da compra compartilhada pra si.
+-    const custoMensal = custoMensalInsumoCompartilhado(insumo, diasMesNegocio);
+-    const custoMensalAlocado = custoMensal * (N(item.percentualAlocado) / 100);
+-    return N(atendimentosMes) > 0 ? custoMensalAlocado / N(atendimentosMes) : 0;
+-  }
+-  if (item.modo === "unidade") {
+-    return precoUnitarioItem(item) * N(item.usoPorAtendimento);
+-  }
+-  if (item.modo === "duracao") {
+-    const duracaoDias = converterParaDias(item.duracaoValor, item.duracaoUnidade);
+-    const dm = N(diasMesNegocio);
+-    if (duracaoDias <= 0 || N(atendimentosMes) <= 0 || dm <= 0) return 0;
+-    const atendimentosNoPeriodoDaCompra = (duracaoDias / dm) * N(atendimentosMes);
+-    return atendimentosNoPeriodoDaCompra > 0 ? N(item.valorCompra) / atendimentosNoPeriodoDaCompra : 0;
+-  }
+-  return N(item.valor); // 'direto'
+-}
+-
+-function somaCustosVariaveis(custosVariaveis, contexto) {
+-  return custosVariaveis.reduce((s, i) => s + calcularValorItemVariavel(i, contexto), 0);
+-}
+-
+-/* ======================================================================= */
+-/* Motor de cálculo por serviço (fórmula original intacta — só a origem    */
+-/* de "totalVariaveis" ficou inteligente)                                  */
+-/* ======================================================================= */
+-function calcularServico({ custosVariaveis, comissaoPct: comissaoInformada, comissaoModo, taxaCartaoPct: taxaInformada, taxaModo, margemPct, horasPorAtendimento, atendimentosMes }, nd) {
+-  if (!nd || !nd.horasTotais) return { status: "sem-negocio" };
+-  const comissaoPct = comissaoEfetiva({ comissaoPct: comissaoInformada, comissaoModo }, nd);
+-  const taxaCartaoPct = taxaEfetiva({ taxaCartaoPct: taxaInformada, taxaModo }, nd);
+-  const totalVariaveis = somaCustosVariaveis(custosVariaveis, { atendimentosMes, diasMesNegocio: nd.diasMes, insumosCompartilhados: nd.insumosCompartilhados });
+-  const imposto = nd.impostoPct;
+-  const soma = N(comissaoPct) + N(taxaCartaoPct) + imposto + N(margemPct);
+-
+-  if (atendimentosMes <= 0) return { status: "sem-volume" };
+-  if (soma >= 100) return { status: "trava-percentual", soma };
+-  if (totalVariaveis <= 0 && nd.custoFixoPorHora * N(horasPorAtendimento) <= 0) return { status: "sem-custo" };
+-
+-  const horas = N(horasPorAtendimento);
+-  const custoFixoRateado = nd.custoFixoPorHora * horas;
+-  const custoBase = custoFixoRateado + totalVariaveis;
+-  const preco = custoBase / (1 - soma / 100);
+-  const valorComissao = preco * (N(comissaoPct) / 100);
+-  const valorTaxaCartao = preco * (N(taxaCartaoPct) / 100);
+-  const valorImposto = preco * (imposto / 100);
+-  const valorMargem = preco * (N(margemPct) / 100);
+-  const margemContribuicaoUnitaria = preco - valorImposto - totalVariaveis - valorComissao - valorTaxaCartao;
+-  const lucroProjetadoMes = valorMargem * atendimentosMes;
+-  const pontoEquilibrioServico = margemContribuicaoUnitaria > 0 ? nd.custoFixoLiquido / margemContribuicaoUnitaria : Infinity;
+-
+-  return {
+-    status: "ok", totalVariaveis, custoFixoRateado, preco, comissaoPct, taxaCartaoPct,
+-    valorComissao, valorTaxaCartao, valorImposto, valorMargem,
+-    margemContribuicaoUnitaria, lucroProjetadoMes, pontoEquilibrioServico,
+-  };
+-}
+-
+-/* Converte o ponto de equilíbrio mensal (já existente) para semanal, usando */
+-/* os dias trabalhados/mês do próprio negócio como base — assim fica         */
+-/* coerente com o resto do app, que já usa esse número pra tudo.             */
+-// Semana de CALENDÁRIO (365,25/12/7 ≈ 4,3482 semanas/mês), não semana de
+-// dias trabalhados — mais intuitivo pra bater com a conta de cabeça de
+-// "um mês tem uns 4 e pouco de semana". Parâmetro diasMesNegocio mantido
+-// na assinatura só por compatibilidade com quem já chama esta função —
+-// não é mais usado no cálculo.
+-const SEMANAS_POR_MES_CALENDARIO = 365.25 / 12 / 7;
+-function pontoEquilibrioSemanal(mensal, _diasMesNegocioNaoUsado) {
+-  if (!Number.isFinite(mensal)) return Infinity;
+-  return mensal / SEMANAS_POR_MES_CALENDARIO;
+-}
+-
+-/* ======================================================================= */
+-/* Motor de cálculo reverso — Modo B ("Já tenho um preço"). Usa exatamente */
+-/* os mesmos componentes de custo do Modo A (custoFixoPorHora, variáveis,  */
+-/* comissão, taxa, imposto) só resolvendo na direção contrária: em vez de  */
+-/* achar o preço a partir da margem, acha a margem a partir do preço.      */
+-/* Verificado numericamente que os dois modos batem exatamente (ver PR).   */
+-/* ======================================================================= */
+-function calcularReverso({ custosVariaveis, comissaoPct: comissaoInformada, comissaoModo, taxaCartaoPct: taxaInformada, taxaModo, precoCobrado, horasPorAtendimento, atendimentosMes, margemMetaPct }, nd) {
+-  if (!nd || !nd.horasTotais) return { status: "sem-negocio" };
+-  const comissaoPct = comissaoEfetiva({ comissaoPct: comissaoInformada, comissaoModo }, nd);
+-  const taxaCartaoPct = taxaEfetiva({ taxaCartaoPct: taxaInformada, taxaModo }, nd);
+-  const preco = N(precoCobrado);
+-  if (preco <= 0) return { status: "sem-preco" };
+-
+-  const totalVariaveis = somaCustosVariaveis(custosVariaveis, { atendimentosMes, diasMesNegocio: nd.diasMes, insumosCompartilhados: nd.insumosCompartilhados });
+-  const horas = N(horasPorAtendimento);
+-  const imposto = nd.impostoPct;
+-  const custoFixoRateado = nd.custoFixoPorHora * horas;
+-
+-  const valorComissao = preco * (N(comissaoPct) / 100);
+-  const valorTaxaCartao = preco * (N(taxaCartaoPct) / 100);
+-  const valorImposto = preco * (imposto / 100);
+-  const custoTotal = custoFixoRateado + totalVariaveis + valorComissao + valorTaxaCartao + valorImposto;
+-
+-  const lucroBruto = preco - totalVariaveis;
+-  const lucroLiquido = preco - custoTotal;
+-  const margemLiquidaPct = (lucroLiquido / preco) * 100;
+-  const markup = custoTotal > 0 ? preco / custoTotal : null;
+-  const lucroPorHora = horas > 0 ? lucroLiquido / horas : null;
+-
+-  // margem de contribuição no mesmo sentido do Modo A (não desconta o rateio do fixo) —
+-  // é o que alimenta o ponto de equilíbrio deste serviço específico.
+-  const margemContribuicaoUnitaria = preco - totalVariaveis - valorComissao - valorTaxaCartao - valorImposto;
+-  const pontoEquilibrioServico = margemContribuicaoUnitaria > 0 ? nd.custoFixoLiquido / margemContribuicaoUnitaria : Infinity;
+-
+-  const somaSemMargem = N(comissaoPct) + N(taxaCartaoPct) + imposto;
+-  const custoBase = custoFixoRateado + totalVariaveis;
+-  const precoMinimo = somaSemMargem < 100 ? custoBase / (1 - somaSemMargem / 100) : null;
+-  const somaComMeta = somaSemMargem + N(margemMetaPct);
+-  const precoIdeal = somaComMeta < 100 ? custoBase / (1 - somaComMeta / 100) : null;
+-
+-  const lucroProjetadoMes = lucroLiquido * N(atendimentosMes);
+-
+-  let diagnostico = "prejuizo";
+-  if (lucroLiquido >= 0) diagnostico = margemLiquidaPct >= N(margemMetaPct) ? "saudavel" : "apertado";
+-
+-  return {
+-    status: "ok", diagnostico, comissaoPct, taxaCartaoPct,
+-    preco, totalVariaveis, custoFixoRateado, valorComissao, valorTaxaCartao, valorImposto,
+-    custoTotal, lucroBruto, lucroLiquido, margemLiquidaPct, markup, lucroPorHora,
+-    margemContribuicaoUnitaria, pontoEquilibrioServico, precoMinimo, precoIdeal, lucroProjetadoMes,
+-  };
+-}
+-
+ /* Escolha entre um valor médio do negócio e um valor próprio do serviço:     */
+ /* a comissão média da equipe (Bloco 4) e a taxa média de recebimento        */
+ /* (Bloco 5) usam o mesmo seletor e a mesma caixa de composição.             */
+@@ -839,67 +496,6 @@
+   return <div className="space-y-4">{blocoComissao}{blocoTaxa}</div>;
+ }
+ 
+-/* Visão unificada de um serviço salvo, independente do modo em que foi   */
+-/* criado — usada pelo Painel para "margem média" e "serviços em prejuízo" */
+-function calcularUnificado(servico, nd) {
+-  if (servico.modo === "ja-tenho") {
+-    const r = calcularReverso({ ...servico, margemMetaPct: N(servico.margemPct) }, nd);
+-    if (r.status !== "ok") return { status: r.status };
+-    return { status: "ok", preco: r.preco, margemPct: r.margemLiquidaPct, diagnostico: r.diagnostico, lucroUnitario: r.lucroLiquido };
+-  }
+-  const r = calcularServico(servico, nd);
+-  if (r.status !== "ok") return { status: r.status };
+-  return { status: "ok", preco: r.preco, margemPct: N(servico.margemPct), diagnostico: "saudavel", lucroUnitario: r.valorMargem };
+-}
+-
+-/* Escolhe automaticamente qual motor usar (Modo A ou B) pra exibição —    */
+-/* usado em toda lista/painel que soma vários serviços salvos de uma vez. */
+-function calcularParaExibicao(servico, nd) {
+-  if (servico.modo === "ja-tenho") {
+-    return calcularReverso({ ...servico, margemMetaPct: N(servico.margemPct) }, nd);
+-  }
+-  return calcularServico(servico, nd);
+-}
+-
+-/* DRE mensal — mesma forma exata de montarDRE(), mas derivada de um Fechamento     */
+-/* Mensal já salvo, não recalculada a partir da configuração atual. É por isso que  */
+-/* fica "congelada": se você mudar custo fixo ou regime tributário mês que vem, o   */
+-/* DRE de meses passados continua mostrando o que era real naquele mês.            */
+-function montarDREMensal(fechamento) {
+-  const receitaBruta = N(fechamento.faturamentoBruto);
+-  const impostos = N(fechamento.impostoPagoReal);
+-  const receitaLiquida = receitaBruta - impostos;
+-  const custosVariaveisTotais = N(fechamento.custosVariaveisReaisInformados);
+-  const margemContribuicaoTotal = receitaLiquida - custosVariaveisTotais;
+-  const custosFixos = N(fechamento.custosFixosSnapshot);
+-  const aluguelRecebido = N(fechamento.aluguelRecebidoSnapshot);
+-  const resultadoOperacional = margemContribuicaoTotal - custosFixos + aluguelRecebido;
+-  return { receitaBruta, impostos, receitaLiquida, custosVariaveisTotais, margemContribuicaoTotal, custosFixos, aluguelRecebido, resultadoOperacional };
+-}
+-
+-function montarDRE(servicosCalc, nd) {
+-  const validos = servicosCalc.filter((s) => s.calc.status === "ok");
+-  const receitaBruta = validos.reduce((s, x) => s + x.calc.preco * N(x.atendimentosMes), 0);
+-  const impostos = validos.reduce((s, x) => s + x.calc.valorImposto * N(x.atendimentosMes), 0);
+-  const receitaLiquida = receitaBruta - impostos;
+-  const custosVariaveisTotais = validos.reduce(
+-    (s, x) => s + (x.calc.totalVariaveis + x.calc.valorComissao + x.calc.valorTaxaCartao) * N(x.atendimentosMes), 0
+-  );
+-  const margemContribuicaoTotal = receitaLiquida - custosVariaveisTotais;
+-  const custosFixos = nd.custoFixoTotal;
+-  // Aluguel de cadeiras recebido: outra receita operacional, em linha própria.
+-  // custosFixosLiquidos é o que a margem dos serviços precisa cobrir — base
+-  // dos pontos de equilíbrio.
+-  const aluguelRecebido = N(nd.receitaAluguelCadeiras);
+-  const custosFixosLiquidos = Math.max(0, custosFixos - aluguelRecebido);
+-  const resultadoOperacional = margemContribuicaoTotal - custosFixos + aluguelRecebido;
+-  const rcm = receitaBruta > 0 ? margemContribuicaoTotal / receitaBruta : 0;
+-  return {
+-    receitaBruta, impostos, receitaLiquida, custosVariaveisTotais, margemContribuicaoTotal,
+-    custosFixos, aluguelRecebido, custosFixosLiquidos, resultadoOperacional, rcm, qtdInvalidos: servicosCalc.length - validos.length,
+-  };
+-}
+-
+ /* ======================================================================= */
+ /* Logo — marca original: cérebro fundido a etiqueta de preço com check,   */
+ /* traço em gradiente roxo→azul→verde                                      */
+@@ -1033,7 +629,7 @@
+ /* ======================================================================= */
+ /* App                                                                      */
+ /* ======================================================================= */
+-const VERSAO_APP = "v7.14";
++const VERSAO_APP = "v7.15";
+ const CHAVE_TEMA = "preco-justo:tema";
+ 
+ /* Rede de segurança: se qualquer aba travar por um motivo que eu não       */
+@@ -3137,46 +2733,6 @@
+   );
+ }
+ 
+-/* Seletor de pacote: escolhe 2+ serviços já salvos e pré-preenche um combo    */
+-/* a partir deles. Não inventa desconto nenhum — a economia (se houver) só     */
+-/* aparece se o usuário reduzir tempo/material de verdade no combo.            */
+-// Preço mínimo recomendado pro pacote — reaproveita a MESMA fórmula markup-divisor de
+-// calcularServico(), só que com os componentes somados/ponderados do combo:
+-// - custo de material e rateio de custo fixo: soma direta de cada serviço selecionado
+-// - comissão e taxa de cartão: média ponderada pelo preço de cada serviço (não inventa uma
+-//   taxa nova, só combina as que cada serviço já tem)
+-// - imposto: nd.impostoPct direto, é uma taxa do negócio, não do serviço específico
+-// - margem-alvo do combo: a MENOR margem efetiva entre os serviços escolhidos (decisão
+-//   conservadora — nenhum serviço do pacote fica "carregando" desconto dos outros escondido)
+-function calcularPrecoMinimoPacote(itensSelecionados, nd) {
+-  if (!nd || itensSelecionados.length === 0) return { status: "sem-dado" };
+-
+-  const totalVariaveisCombo = itensSelecionados.reduce((s, it) => s + it.calc.totalVariaveis, 0);
+-  const custoFixoRateadoCombo = itensSelecionados.reduce((s, it) => s + it.calc.custoFixoRateado, 0);
+-  const custoBaseCombo = totalVariaveisCombo + custoFixoRateadoCombo;
+-
+-  const somaPrecos = itensSelecionados.reduce((s, it) => s + it.calc.preco, 0);
+-  if (somaPrecos <= 0) return { status: "sem-dado" };
+-  const comissaoPctPonderada = itensSelecionados.reduce((s, it) => s + comissaoEfetiva(it, nd) * it.calc.preco, 0) / somaPrecos;
+-  const taxaCartaoPctPonderada = itensSelecionados.reduce((s, it) => s + taxaEfetiva(it, nd) * it.calc.preco, 0) / somaPrecos;
+-
+-  const margensEfetivas = itensSelecionados.map((it) => ({
+-    nome: it.nome,
+-    margemPct: it.modo === "descobrir" ? N(it.margemPct) : it.calc.margemLiquidaPct,
+-  }));
+-  const menor = margensEfetivas.reduce((a, b) => (b.margemPct < a.margemPct ? b : a));
+-
+-  const soma = comissaoPctPonderada + taxaCartaoPctPonderada + nd.impostoPct + menor.margemPct;
+-  if (soma >= 100) return { status: "trava-percentual" };
+-
+-  return {
+-    status: "ok",
+-    precoMinimoRecomendado: custoBaseCombo / (1 - soma / 100),
+-    margemUsadaPct: menor.margemPct,
+-    servicoMargemMenor: menor.nome,
+-  };
+-}
+-
+ function MontadorPacote({ servicosCalc, onMontar, nd }) {
+   const t = useT();
+   const [selecionados, setSelecionados] = useState([]);
+@@ -4562,23 +4118,8 @@
+     : null;
+   const servicosEmPrejuizo = servicosValidos.filter((s) => s.calc.diagnostico === "prejuizo");
+ 
+-  // Ponto de equilíbrio ponderado pelo mix de vendas (Padoveze, Contabilidade Gerencial):
+-  // cada serviço pesa no mix pela sua fatia de atendimentos/mês; a margem de contribuição
+-  // ponderada (MCP) é a soma de (peso × margem de contribuição unitária) de cada um. O
+-  // ponto de equilíbrio do negócio inteiro, em atendimentos, é custoFixoTotal ÷ MCP.
+-  const somaAtendimentosMix = servicosValidos.reduce((s, x) => s + N(x.atendimentosMes), 0);
+-  const margemContribuicaoPonderada = somaAtendimentosMix > 0
+-    ? servicosValidos.reduce((s, x) => s + (N(x.atendimentosMes) / somaAtendimentosMix) * x.calc.margemContribuicaoUnitaria, 0)
+-    : 0;
+-  const pontoEquilibrioMix = margemContribuicaoPonderada > 0 ? nd.custoFixoLiquido / margemContribuicaoPonderada : Infinity;
+-
+-  const custoOportunidadeMes = N(negocio.capitalInvestido) * (N(negocio.taxaRetorno) / 100);
+-  const peContabilRS = dre.rcm > 0 ? dre.custosFixosLiquidos / dre.rcm : Infinity;
+-  const peFinanceiroRS = dre.rcm > 0 ? Math.max(0, dre.custosFixosLiquidos - nd.custoFixoNaoCaixa) / dre.rcm : Infinity;
+-  const peEconomicoRS = dre.rcm > 0 ? (dre.custosFixosLiquidos + custoOportunidadeMes) / dre.rcm : Infinity;
+-  const margemSeguranca = dre.receitaBruta > 0 && Number.isFinite(peContabilRS)
+-    ? ((dre.receitaBruta - peContabilRS) / dre.receitaBruta) * 100 : null;
+-  const gao = dre.resultadoOperacional > 0 ? dre.margemContribuicaoTotal / dre.resultadoOperacional : null;
++  const { margemContribuicaoPonderada, pontoEquilibrioMix, custoOportunidadeMes, peContabilRS, peFinanceiroRS, peEconomicoRS, margemSeguranca, gao } =
++    calcularIndicadoresGerenciais(servicosValidos, dre, nd, negocio);
+ 
+   const chartData = servicosCalc
+     .filter((s) => s.calc.status === "ok")
+@@ -6373,47 +5914,12 @@
+ const fmtDataBR = (iso) => (iso ? new Date(iso + "T12:00:00").toLocaleDateString("pt-BR") : "");
+ const diasDesde = (iso) => Math.floor((Date.now() - new Date(iso + "T12:00:00").getTime()) / 86400000);
+ 
+-/* Distância em linha reta (fórmula de haversine), em km. */
+-function distanciaKm(a, b) {
+-  const R = 6371;
+-  const rad = (x) => (x * Math.PI) / 180;
+-  const dLat = rad(b.lat - a.lat);
+-  const dLng = rad(b.lng - a.lng);
+-  const h = Math.sin(dLat / 2) ** 2 + Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(dLng / 2) ** 2;
+-  return 2 * R * Math.asin(Math.sqrt(h));
+-}
+-function mediana(valores) {
+-  const v = [...valores].sort((a, b) => a - b);
+-  const m = Math.floor(v.length / 2);
+-  return v.length % 2 ? v[m] : (v[m - 1] + v[m]) / 2;
+-}
+ const fmtKm = (km) => (km < 1 ? `${Math.round(km * 1000)} m` : `${km.toLocaleString("pt-BR", { maximumFractionDigits: 1 })} km`);
+ 
+ function lerJSON(texto, padrao) {
+   try { const v = JSON.parse(texto); return v ?? padrao; } catch { return padrao; }
+ }
+ 
+-/* Preço mais recente que cada concorrente tem anotado para um serviço.     */
+-/* Assim, anotar o mesmo concorrente duas vezes não pesa em dobro.          */
+-function ultimoPrecoPorConcorrente(concorrentes, servicoId) {
+-  return concorrentes.map((c) => {
+-    const doServico = (c.precos || []).filter((p) => p.servicoId === servicoId && N(p.valor) > 0);
+-    if (doServico.length === 0) return null;
+-    const ultimo = doServico.reduce((a, b) => (b.data > a.data ? b : a));
+-    return { concorrente: c, valor: N(ultimo.valor), data: ultimo.data };
+-  }).filter(Boolean);
+-}
+-
+-/* Piso do serviço: o preço que só cobre os custos, sem lucro (margem 0).   */
+-function pisoDoServico(s, nd) {
+-  if (s.modo === "ja-tenho") {
+-    const r = calcularReverso({ ...s, margemMetaPct: 0 }, nd);
+-    return r.status === "ok" ? r.precoMinimo : null;
+-  }
+-  const r = calcularServico({ ...s, margemPct: 0 }, nd);
+-  return r.status === "ok" ? r.preco : null;
+-}
+-
+ function BotaoSegmento({ ativo, onClick, children, ...rest }) {
+   const t = useT();
+   return (
+--- /dev/null
++++ b/src/calculos.js
+@@ -0,0 +1,527 @@
++/* ======================================================================= */
++/* Cálculos do Preço Justo — funções puras (sem React, sem tela).          */
++/* Separadas do App.jsx no Bloco 8 para serem testadas automaticamente   */
++/* (src/calculos.test.js). Qualquer conta nova entra aqui, com teste.      */
++/* ======================================================================= */
++
++export const fmtBRL = (v) =>
++  new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(
++    Number.isFinite(v) ? v : 0
++  );
++
++// Percentual no padrão brasileiro (vírgula decimal), igual ao fmtBRL — antes saía "6.00%"
++// ao lado de "R$ 8.000,00" na mesma frase.
++export const fmtPct = (v, casas = 1) =>
++  `${(Number.isFinite(v) ? v : 0).toLocaleString("pt-BR", { minimumFractionDigits: casas, maximumFractionDigits: casas })}%`;
++
++export const N = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
++
++// Lê um valor digitado no padrão brasileiro e devolve no formato que N() entende
++// ("2500.5"). Antes, "2.500" virava R$ 2,50 e "2.500,00" virava R$ 0,00 sem aviso.
++// Regras: com vírgula, ela é o decimal e os pontos são milhar ("2.500,50" → 2500.5);
++// sem vírgula, vários pontos são milhar ("1.234.567"); um ponto só seguido de
++// exatamente 3 dígitos também é milhar ("2.500" → 2500), porque centavos têm 2
++// dígitos; nos demais casos o ponto é decimal ("2.5", "2.50"). Preserva valores
++// parciais durante a digitação ("2500," → "2500.").
++export function normalizarValorBR(texto) {
++  const limpo = String(texto ?? "").replace(/[^\d.,]/g, "");
++  if (limpo.includes(",")) {
++    const [inteiro, ...resto] = limpo.split(",");
++    return `${inteiro.replace(/\./g, "")}.${resto.join("")}`;
++  }
++  const pontos = (limpo.match(/\./g) || []).length;
++  if (pontos > 1) return limpo.replace(/\./g, "");
++  if (pontos === 1 && /^\d+\.\d{3}$/.test(limpo)) return limpo.replace(".", "");
++  return limpo;
++}
++
++/* ======================================================================= */
++/* Simples Nacional — tabelas reais, vigentes 2026 (LC 123/2006).          */
++/* ======================================================================= */
++
++export const ANEXO_III = [
++  { limite: 180000, aliq: 0.06, pd: 0 },
++  { limite: 360000, aliq: 0.112, pd: 9360 },
++  { limite: 720000, aliq: 0.135, pd: 17640 },
++  { limite: 1800000, aliq: 0.16, pd: 35640 },
++  { limite: 3600000, aliq: 0.21, pd: 125640 },
++  { limite: 4800000, aliq: 0.33, pd: 648000 },
++];
++
++export const ANEXO_V = [
++  { limite: 180000, aliq: 0.155, pd: 0 },
++  { limite: 360000, aliq: 0.18, pd: 4500 },
++  { limite: 720000, aliq: 0.195, pd: 9900 },
++  { limite: 1800000, aliq: 0.205, pd: 17100 },
++  { limite: 3600000, aliq: 0.23, pd: 62100 },
++  { limite: 4800000, aliq: 0.305, pd: 540000 },
++];
++
++export function aliquotaEfetiva(rbt12, tabela) {
++  if (rbt12 <= 0) return { faixaIdx: 0, aliqNominal: tabela[0].aliq, pd: 0, aliqEfetiva: tabela[0].aliq };
++  if (rbt12 > 4800000) return null;
++  const idx = tabela.findIndex((f) => rbt12 <= f.limite);
++  const faixa = tabela[idx];
++  const efetiva = (rbt12 * faixa.aliq - faixa.pd) / rbt12;
++  return { faixaIdx: idx, aliqNominal: faixa.aliq, pd: faixa.pd, aliqEfetiva: Math.max(0, efetiva) };
++}
++
++/* Vínculo de cada profissional cadastrado (Bloco 4). Cadastros antigos não  */
++/* têm o campo: são tratados como comissionados, mas só entram na média de   */
++/* comissão quando a comissão for informada.                                 */
++export const VINCULOS_PROFISSIONAL = [
++  { id: "comissao", label: "Comissionado(a)" },
++  { id: "dono", label: "Dono(a) / sem comissão" },
++  { id: "aluguel", label: "Aluga cadeira" },
++];
++
++export const vinculoDe = (p) => p?.vinculo || "comissao";
++
++/* Comissão média da equipe, ponderada pelos atendimentos de cada pessoa que */
++/* atende pelo salão (comissionados e dono). Quem aluga cadeira fica de fora: */
++/* o serviço dele não é receita do salão. Se faltar o número de atendimentos */
++/* de alguém, usa média simples e avisa (ponderada: false).                  */
++export function calcularComissaoEquipe(profissionais) {
++  const participantes = (profissionais || [])
++    .filter((p) => p.ativo !== false && (p.nome || "").trim())
++    .filter((p) => (vinculoDe(p) === "comissao" && String(p.comissaoPct ?? "").trim() !== "") || vinculoDe(p) === "dono")
++    .map((p) => ({
++      id: p.id, nome: p.nome.trim(), vinculo: vinculoDe(p),
++      pct: vinculoDe(p) === "dono" ? 0 : Math.min(99, Math.max(0, N(p.comissaoPct))),
++      atendimentos: Math.max(0, N(p.atendimentosMes)),
++    }));
++  const temComissionado = participantes.some((p) => p.vinculo === "comissao");
++  if (participantes.length < 2 || !temComissionado) return null;
++  const ponderada = participantes.every((p) => p.atendimentos > 0);
++  const somaPesos = ponderada ? participantes.reduce((s, p) => s + p.atendimentos, 0) : participantes.length;
++  const pct = participantes.reduce((s, p) => s + p.pct * (ponderada ? p.atendimentos : 1), 0) / somaPesos;
++  return { pct, ponderada, participantes };
++}
++
++/* Comissão que de fato entra no preço de um serviço: a média da equipe, se  */
++/* o serviço foi marcado para usá-la e ela existe; senão, a do próprio       */
++/* serviço. Serviços salvos antes do Bloco 4 não têm comissaoModo e mantêm   */
++/* a comissão que já tinham.                                                 */
++export function comissaoEfetiva(servico, nd) {
++  if (servico?.comissaoModo === "equipe" && nd?.comissaoEquipe) return nd.comissaoEquipe.pct;
++  return N(servico?.comissaoPct);
++}
++
++/* Formas de pagamento (Bloco 5). Cada forma tem a parte das vendas que     */
++/* entra por ela e a taxa cobrada. Dinheiro não tem taxa. Nenhuma taxa vem   */
++/* preenchida: cada maquininha e cada banco cobra diferente, e o número      */
++/* certo está no extrato ou no contrato do próprio usuário.                  */
++export const FORMAS_PAGAMENTO = [
++  { id: "dinheiro", label: "Dinheiro", semTaxa: true },
++  { id: "pix", label: "Pix" },
++  { id: "debito", label: "Débito" },
++  { id: "credito", label: "Crédito à vista" },
++  { id: "parcelado", label: "Crédito parcelado" },
++];
++
++/* Taxa média de recebimento: média das taxas ponderada pela parte das vendas */
++/* de cada forma. Só vale como média do negócio quando as partes somam 100%  */
++/* (completo); antes disso, a tela mostra quanto falta.                      */
++export function calcularTaxaRecebimento(recebimento) {
++  const itens = FORMAS_PAGAMENTO.map((f) => {
++    const r = recebimento?.[f.id] || {};
++    return {
++      id: f.id, label: f.label,
++      participacao: Math.max(0, N(r.participacaoPct)),
++      taxa: f.semTaxa ? 0 : Math.min(99, Math.max(0, N(r.taxaPct))),
++    };
++  }).filter((i) => i.participacao > 0);
++  if (itens.length === 0) return null;
++  const soma = itens.reduce((s, i) => s + i.participacao, 0);
++  const pct = itens.reduce((s, i) => s + i.participacao * i.taxa, 0) / soma;
++  return { pct, soma, completo: Math.abs(soma - 100) <= 0.5, itens };
++}
++
++/* Taxa de cartão que de fato entra no preço de um serviço: a média do       */
++/* negócio, se o serviço foi marcado para usá-la e ela existe; senão, a do   */
++/* próprio serviço. Serviços salvos antes do Bloco 5 não têm taxaModo e      */
++/* mantêm a taxa que já tinham.                                              */
++export function taxaEfetiva(servico, nd) {
++  if (servico?.taxaModo === "negocio" && nd?.taxaRecebimento) return nd.taxaRecebimento.pct;
++  return N(servico?.taxaCartaoPct);
++}
++
++export function computeNegocioDerivado(n) {
++  const custosFixosSoma = n.custosFixos.reduce((s, i) => s + N(i.valor), 0);
++  const proLabore = N(n.proLabore);
++  const meiDas = n.regime === "mei" ? N(n.meiDas) : 0;
++  const custoFixoTotal = custosFixosSoma + proLabore + meiDas;
++  const custoFixoNaoCaixa = n.custosFixos.filter((i) => i.semCaixa).reduce((s, i) => s + N(i.valor), 0);
++  const horasTotais = N(n.diasMes) * N(n.horasDia) * Math.max(1, N(n.numeroProfissionais) || 1);
++  // Aluguel de cadeiras recebido (lado do dono): é receita do salão, não custo
++  // negativo — aparece em linha própria no DRE. Para o preço, reduz o custo
++  // fixo que os serviços do próprio salão precisam cobrir.
++  const receitaAluguelCadeiras = (n.profissionais || [])
++    .filter((p) => p.ativo !== false && vinculoDe(p) === "aluguel")
++    .reduce((s, p) => s + N(p.aluguelMes), 0);
++  const custoFixoLiquido = Math.max(0, custoFixoTotal - receitaAluguelCadeiras);
++  const custoFixoPorHora = horasTotais > 0 ? custoFixoLiquido / horasTotais : 0;
++  const comissaoEquipe = calcularComissaoEquipe(n.profissionais);
++  const recebimento = calcularTaxaRecebimento(n.recebimento);
++  const taxaRecebimento = recebimento?.completo ? recebimento : null;
++
++  let impostoPct = 0, fatorR = null, anexoUsado = null, aliqInfo = null;
++  if (n.regime === "simples") {
++    const rbt12 = N(n.rbt12);
++    const folha12 = N(n.folha12);
++    fatorR = rbt12 > 0 ? folha12 / rbt12 : 0;
++    const elegivelIII = n.atividadeSempreAnexoIII || fatorR >= 0.28;
++    anexoUsado = elegivelIII ? "III" : "V";
++    aliqInfo = aliquotaEfetiva(rbt12, elegivelIII ? ANEXO_III : ANEXO_V);
++    impostoPct = aliqInfo ? aliqInfo.aliqEfetiva * 100 : 0;
++  }
++
++  return {
++    custosFixosSoma, proLabore, meiDas, custoFixoTotal, custoFixoNaoCaixa,
++    receitaAluguelCadeiras, custoFixoLiquido, comissaoEquipe, taxaRecebimento,
++    horasTotais, custoFixoPorHora, impostoPct, fatorR, anexoUsado, aliqInfo,
++    numeroProfissionais: Math.max(1, N(n.numeroProfissionais) || 1),
++    diasMes: N(n.diasMes),
++    insumosCompartilhados: n.insumosCompartilhados || [],
++    perfil: n.perfil || null,
++    regime: n.regime,
++    configurado: n.custosFixos.length > 0 && custoFixoTotal > 0 && horasTotais > 0,
++  };
++}
++
++/* ======================================================================= */
++/* Custo variável "inteligente" — converte o jeito que o profissional      */
++/* realmente pensa (duração de uma compra, ou quanto usa por atendimento)  */
++/* no valor por atendimento que o motor de precificação já esperava. Três  */
++/* modos coexistem no mesmo item, escolhidos por item:                     */
++/*   'direto'  — valor por atendimento digitado à mão (comportamento       */
++/*                original, mantido por compatibilidade com o que já foi   */
++/*                salvo antes desta versão).                               */
++/*   'duracao' — ex: "paguei R$80 num galão que dura 45 dias" — usa o      */
++/*                volume de atendimentos do próprio serviço para converter.*/
++/*   'unidade' — ex: "a caixa de 100 toucas custou R$40, uso 1 por         */
++/*                atendimento" — divide o preço da compra pela quantidade  */
++/*                comprada e multiplica pelo consumo unitário.             */
++/* ======================================================================= */
++
++export function converterParaDias(valor, unidade) {
++  const v = N(valor);
++  if (unidade === "semanas") return v * 7;
++  if (unidade === "meses") return v * 30;
++  return v; // "dias"
++}
++
++export function precoUnitarioItem(item) {
++  const qtd = N(item.quantidadeComprada);
++  return qtd > 0 ? N(item.valorCompra) / qtd : 0;
++}
++
++/* Custo mensal total de um insumo compartilhado (independe de quem usa) —   */
++/* só existe pra insumo tipo 'duracao'; tipo 'unidade' não decai com o       */
++/* tempo, então não tem "custo mensal" próprio, só preço por unidade.        */
++export function custoMensalInsumoCompartilhado(insumo, diasMesNegocio) {
++  const duracaoDias = converterParaDias(insumo.duracaoValor, insumo.duracaoUnidade);
++  const dm = N(diasMesNegocio);
++  if (duracaoDias <= 0 || dm <= 0) return 0;
++  return (N(insumo.valorCompra) * dm) / duracaoDias;
++}
++
++export function calcularValorItemVariavel(item, { atendimentosMes, diasMesNegocio, insumosCompartilhados }) {
++  if (item.modo === "compartilhado") {
++    const insumo = (insumosCompartilhados || []).find((i) => i.id === item.insumoId);
++    if (!insumo) return 0;
++    if (insumo.modo === "unidade") {
++      // consumo direto: cada atendimento realmente gasta sua própria unidade —
++      // não precisa de alocação percentual, não tem risco de contar em dobro.
++      return precoUnitarioItem(insumo) * N(item.usoPorAtendimento);
++    }
++    // insumo tipo 'duracao': o custo dele é por TEMPO, não por consumo — se dois
++    // serviços puxassem 100% cada um, o insumo seria contado em dobro no DRE. Por
++    // isso cada serviço aloca um % da compra compartilhada pra si.
++    const custoMensal = custoMensalInsumoCompartilhado(insumo, diasMesNegocio);
++    const custoMensalAlocado = custoMensal * (N(item.percentualAlocado) / 100);
++    return N(atendimentosMes) > 0 ? custoMensalAlocado / N(atendimentosMes) : 0;
++  }
++  if (item.modo === "unidade") {
++    return precoUnitarioItem(item) * N(item.usoPorAtendimento);
++  }
++  if (item.modo === "duracao") {
++    const duracaoDias = converterParaDias(item.duracaoValor, item.duracaoUnidade);
++    const dm = N(diasMesNegocio);
++    if (duracaoDias <= 0 || N(atendimentosMes) <= 0 || dm <= 0) return 0;
++    const atendimentosNoPeriodoDaCompra = (duracaoDias / dm) * N(atendimentosMes);
++    return atendimentosNoPeriodoDaCompra > 0 ? N(item.valorCompra) / atendimentosNoPeriodoDaCompra : 0;
++  }
++  return N(item.valor); // 'direto'
++}
++
++export function somaCustosVariaveis(custosVariaveis, contexto) {
++  return custosVariaveis.reduce((s, i) => s + calcularValorItemVariavel(i, contexto), 0);
++}
++
++/* ======================================================================= */
++/* Motor de cálculo por serviço (fórmula original intacta — só a origem    */
++/* de "totalVariaveis" ficou inteligente)                                  */
++/* ======================================================================= */
++
++export function calcularServico({ custosVariaveis, comissaoPct: comissaoInformada, comissaoModo, taxaCartaoPct: taxaInformada, taxaModo, margemPct, horasPorAtendimento, atendimentosMes }, nd) {
++  if (!nd || !nd.horasTotais) return { status: "sem-negocio" };
++  const comissaoPct = comissaoEfetiva({ comissaoPct: comissaoInformada, comissaoModo }, nd);
++  const taxaCartaoPct = taxaEfetiva({ taxaCartaoPct: taxaInformada, taxaModo }, nd);
++  const totalVariaveis = somaCustosVariaveis(custosVariaveis, { atendimentosMes, diasMesNegocio: nd.diasMes, insumosCompartilhados: nd.insumosCompartilhados });
++  const imposto = nd.impostoPct;
++  const soma = N(comissaoPct) + N(taxaCartaoPct) + imposto + N(margemPct);
++
++  if (atendimentosMes <= 0) return { status: "sem-volume" };
++  if (soma >= 100) return { status: "trava-percentual", soma };
++  if (totalVariaveis <= 0 && nd.custoFixoPorHora * N(horasPorAtendimento) <= 0) return { status: "sem-custo" };
++
++  const horas = N(horasPorAtendimento);
++  const custoFixoRateado = nd.custoFixoPorHora * horas;
++  const custoBase = custoFixoRateado + totalVariaveis;
++  const preco = custoBase / (1 - soma / 100);
++  const valorComissao = preco * (N(comissaoPct) / 100);
++  const valorTaxaCartao = preco * (N(taxaCartaoPct) / 100);
++  const valorImposto = preco * (imposto / 100);
++  const valorMargem = preco * (N(margemPct) / 100);
++  const margemContribuicaoUnitaria = preco - valorImposto - totalVariaveis - valorComissao - valorTaxaCartao;
++  const lucroProjetadoMes = valorMargem * atendimentosMes;
++  const pontoEquilibrioServico = margemContribuicaoUnitaria > 0 ? nd.custoFixoLiquido / margemContribuicaoUnitaria : Infinity;
++
++  return {
++    status: "ok", totalVariaveis, custoFixoRateado, preco, comissaoPct, taxaCartaoPct,
++    valorComissao, valorTaxaCartao, valorImposto, valorMargem,
++    margemContribuicaoUnitaria, lucroProjetadoMes, pontoEquilibrioServico,
++  };
++}
++
++/* Converte o ponto de equilíbrio mensal (já existente) para semanal, usando */
++/* os dias trabalhados/mês do próprio negócio como base — assim fica         */
++/* coerente com o resto do app, que já usa esse número pra tudo.             */
++// Semana de CALENDÁRIO (365,25/12/7 ≈ 4,3482 semanas/mês), não semana de
++// dias trabalhados — mais intuitivo pra bater com a conta de cabeça de
++// "um mês tem uns 4 e pouco de semana". Parâmetro diasMesNegocio mantido
++// na assinatura só por compatibilidade com quem já chama esta função —
++// não é mais usado no cálculo.
++export const SEMANAS_POR_MES_CALENDARIO = 365.25 / 12 / 7;
++
++export function pontoEquilibrioSemanal(mensal, _diasMesNegocioNaoUsado) {
++  if (!Number.isFinite(mensal)) return Infinity;
++  return mensal / SEMANAS_POR_MES_CALENDARIO;
++}
++
++/* ======================================================================= */
++/* Motor de cálculo reverso — Modo B ("Já tenho um preço"). Usa exatamente */
++/* os mesmos componentes de custo do Modo A (custoFixoPorHora, variáveis,  */
++/* comissão, taxa, imposto) só resolvendo na direção contrária: em vez de  */
++/* achar o preço a partir da margem, acha a margem a partir do preço.      */
++/* Verificado numericamente que os dois modos batem exatamente (ver PR).   */
++/* ======================================================================= */
++
++export function calcularReverso({ custosVariaveis, comissaoPct: comissaoInformada, comissaoModo, taxaCartaoPct: taxaInformada, taxaModo, precoCobrado, horasPorAtendimento, atendimentosMes, margemMetaPct }, nd) {
++  if (!nd || !nd.horasTotais) return { status: "sem-negocio" };
++  const comissaoPct = comissaoEfetiva({ comissaoPct: comissaoInformada, comissaoModo }, nd);
++  const taxaCartaoPct = taxaEfetiva({ taxaCartaoPct: taxaInformada, taxaModo }, nd);
++  const preco = N(precoCobrado);
++  if (preco <= 0) return { status: "sem-preco" };
++
++  const totalVariaveis = somaCustosVariaveis(custosVariaveis, { atendimentosMes, diasMesNegocio: nd.diasMes, insumosCompartilhados: nd.insumosCompartilhados });
++  const horas = N(horasPorAtendimento);
++  const imposto = nd.impostoPct;
++  const custoFixoRateado = nd.custoFixoPorHora * horas;
++
++  const valorComissao = preco * (N(comissaoPct) / 100);
++  const valorTaxaCartao = preco * (N(taxaCartaoPct) / 100);
++  const valorImposto = preco * (imposto / 100);
++  const custoTotal = custoFixoRateado + totalVariaveis + valorComissao + valorTaxaCartao + valorImposto;
++
++  const lucroBruto = preco - totalVariaveis;
++  const lucroLiquido = preco - custoTotal;
++  const margemLiquidaPct = (lucroLiquido / preco) * 100;
++  const markup = custoTotal > 0 ? preco / custoTotal : null;
++  const lucroPorHora = horas > 0 ? lucroLiquido / horas : null;
++
++  // margem de contribuição no mesmo sentido do Modo A (não desconta o rateio do fixo) —
++  // é o que alimenta o ponto de equilíbrio deste serviço específico.
++  const margemContribuicaoUnitaria = preco - totalVariaveis - valorComissao - valorTaxaCartao - valorImposto;
++  const pontoEquilibrioServico = margemContribuicaoUnitaria > 0 ? nd.custoFixoLiquido / margemContribuicaoUnitaria : Infinity;
++
++  const somaSemMargem = N(comissaoPct) + N(taxaCartaoPct) + imposto;
++  const custoBase = custoFixoRateado + totalVariaveis;
++  const precoMinimo = somaSemMargem < 100 ? custoBase / (1 - somaSemMargem / 100) : null;
++  const somaComMeta = somaSemMargem + N(margemMetaPct);
++  const precoIdeal = somaComMeta < 100 ? custoBase / (1 - somaComMeta / 100) : null;
++
++  const lucroProjetadoMes = lucroLiquido * N(atendimentosMes);
++
++  let diagnostico = "prejuizo";
++  if (lucroLiquido >= 0) diagnostico = margemLiquidaPct >= N(margemMetaPct) ? "saudavel" : "apertado";
++
++  return {
++    status: "ok", diagnostico, comissaoPct, taxaCartaoPct,
++    preco, totalVariaveis, custoFixoRateado, valorComissao, valorTaxaCartao, valorImposto,
++    custoTotal, lucroBruto, lucroLiquido, margemLiquidaPct, markup, lucroPorHora,
++    margemContribuicaoUnitaria, pontoEquilibrioServico, precoMinimo, precoIdeal, lucroProjetadoMes,
++  };
++}
++
++/* Visão unificada de um serviço salvo, independente do modo em que foi   */
++/* criado — usada pelo Painel para "margem média" e "serviços em prejuízo" */
++export function calcularUnificado(servico, nd) {
++  if (servico.modo === "ja-tenho") {
++    const r = calcularReverso({ ...servico, margemMetaPct: N(servico.margemPct) }, nd);
++    if (r.status !== "ok") return { status: r.status };
++    return { status: "ok", preco: r.preco, margemPct: r.margemLiquidaPct, diagnostico: r.diagnostico, lucroUnitario: r.lucroLiquido };
++  }
++  const r = calcularServico(servico, nd);
++  if (r.status !== "ok") return { status: r.status };
++  return { status: "ok", preco: r.preco, margemPct: N(servico.margemPct), diagnostico: "saudavel", lucroUnitario: r.valorMargem };
++}
++
++/* Escolhe automaticamente qual motor usar (Modo A ou B) pra exibição —    */
++/* usado em toda lista/painel que soma vários serviços salvos de uma vez. */
++export function calcularParaExibicao(servico, nd) {
++  if (servico.modo === "ja-tenho") {
++    return calcularReverso({ ...servico, margemMetaPct: N(servico.margemPct) }, nd);
++  }
++  return calcularServico(servico, nd);
++}
++
++/* DRE mensal — mesma forma exata de montarDRE(), mas derivada de um Fechamento     */
++/* Mensal já salvo, não recalculada a partir da configuração atual. É por isso que  */
++/* fica "congelada": se você mudar custo fixo ou regime tributário mês que vem, o   */
++/* DRE de meses passados continua mostrando o que era real naquele mês.            */
++export function montarDREMensal(fechamento) {
++  const receitaBruta = N(fechamento.faturamentoBruto);
++  const impostos = N(fechamento.impostoPagoReal);
++  const receitaLiquida = receitaBruta - impostos;
++  const custosVariaveisTotais = N(fechamento.custosVariaveisReaisInformados);
++  const margemContribuicaoTotal = receitaLiquida - custosVariaveisTotais;
++  const custosFixos = N(fechamento.custosFixosSnapshot);
++  const aluguelRecebido = N(fechamento.aluguelRecebidoSnapshot);
++  const resultadoOperacional = margemContribuicaoTotal - custosFixos + aluguelRecebido;
++  return { receitaBruta, impostos, receitaLiquida, custosVariaveisTotais, margemContribuicaoTotal, custosFixos, aluguelRecebido, resultadoOperacional };
++}
++
++export function montarDRE(servicosCalc, nd) {
++  const validos = servicosCalc.filter((s) => s.calc.status === "ok");
++  const receitaBruta = validos.reduce((s, x) => s + x.calc.preco * N(x.atendimentosMes), 0);
++  const impostos = validos.reduce((s, x) => s + x.calc.valorImposto * N(x.atendimentosMes), 0);
++  const receitaLiquida = receitaBruta - impostos;
++  const custosVariaveisTotais = validos.reduce(
++    (s, x) => s + (x.calc.totalVariaveis + x.calc.valorComissao + x.calc.valorTaxaCartao) * N(x.atendimentosMes), 0
++  );
++  const margemContribuicaoTotal = receitaLiquida - custosVariaveisTotais;
++  const custosFixos = nd.custoFixoTotal;
++  // Aluguel de cadeiras recebido: outra receita operacional, em linha própria.
++  // custosFixosLiquidos é o que a margem dos serviços precisa cobrir — base
++  // dos pontos de equilíbrio.
++  const aluguelRecebido = N(nd.receitaAluguelCadeiras);
++  const custosFixosLiquidos = Math.max(0, custosFixos - aluguelRecebido);
++  const resultadoOperacional = margemContribuicaoTotal - custosFixos + aluguelRecebido;
++  const rcm = receitaBruta > 0 ? margemContribuicaoTotal / receitaBruta : 0;
++  return {
++    receitaBruta, impostos, receitaLiquida, custosVariaveisTotais, margemContribuicaoTotal,
++    custosFixos, aluguelRecebido, custosFixosLiquidos, resultadoOperacional, rcm, qtdInvalidos: servicosCalc.length - validos.length,
++  };
++}
++
++/* Indicadores gerenciais do Painel: ponto de equilíbrio pelo mix (MCP), os três     */
++/* pontos de equilíbrio em R$, margem de segurança e GAO. Funções puras, testadas.  */
++export function calcularIndicadoresGerenciais(servicosValidos, dre, nd, negocio) {
++  // Ponto de equilíbrio ponderado pelo mix de vendas (Padoveze, Contabilidade Gerencial):
++  // cada serviço pesa no mix pela sua fatia de atendimentos/mês; a margem de contribuição
++  // ponderada (MCP) é a soma de (peso × margem de contribuição unitária) de cada um. O
++  // ponto de equilíbrio do negócio inteiro, em atendimentos, é custoFixoTotal ÷ MCP.
++  const somaAtendimentosMix = servicosValidos.reduce((s, x) => s + N(x.atendimentosMes), 0);
++  const margemContribuicaoPonderada = somaAtendimentosMix > 0
++    ? servicosValidos.reduce((s, x) => s + (N(x.atendimentosMes) / somaAtendimentosMix) * x.calc.margemContribuicaoUnitaria, 0)
++    : 0;
++  const pontoEquilibrioMix = margemContribuicaoPonderada > 0 ? nd.custoFixoLiquido / margemContribuicaoPonderada : Infinity;
++
++  const custoOportunidadeMes = N(negocio.capitalInvestido) * (N(negocio.taxaRetorno) / 100);
++  const peContabilRS = dre.rcm > 0 ? dre.custosFixosLiquidos / dre.rcm : Infinity;
++  const peFinanceiroRS = dre.rcm > 0 ? Math.max(0, dre.custosFixosLiquidos - nd.custoFixoNaoCaixa) / dre.rcm : Infinity;
++  const peEconomicoRS = dre.rcm > 0 ? (dre.custosFixosLiquidos + custoOportunidadeMes) / dre.rcm : Infinity;
++  const margemSeguranca = dre.receitaBruta > 0 && Number.isFinite(peContabilRS)
++    ? ((dre.receitaBruta - peContabilRS) / dre.receitaBruta) * 100 : null;
++  const gao = dre.resultadoOperacional > 0 ? dre.margemContribuicaoTotal / dre.resultadoOperacional : null;
++  return { somaAtendimentosMix, margemContribuicaoPonderada, pontoEquilibrioMix, custoOportunidadeMes, peContabilRS, peFinanceiroRS, peEconomicoRS, margemSeguranca, gao };
++}
++
++/* Seletor de pacote: escolhe 2+ serviços já salvos e pré-preenche um combo    */
++/* a partir deles. Não inventa desconto nenhum — a economia (se houver) só     */
++/* aparece se o usuário reduzir tempo/material de verdade no combo.            */
++// Preço mínimo recomendado pro pacote — reaproveita a MESMA fórmula markup-divisor de
++// calcularServico(), só que com os componentes somados/ponderados do combo:
++// - custo de material e rateio de custo fixo: soma direta de cada serviço selecionado
++// - comissão e taxa de cartão: média ponderada pelo preço de cada serviço (não inventa uma
++//   taxa nova, só combina as que cada serviço já tem)
++// - imposto: nd.impostoPct direto, é uma taxa do negócio, não do serviço específico
++// - margem-alvo do combo: a MENOR margem efetiva entre os serviços escolhidos (decisão
++//   conservadora — nenhum serviço do pacote fica "carregando" desconto dos outros escondido)
++export function calcularPrecoMinimoPacote(itensSelecionados, nd) {
++  if (!nd || itensSelecionados.length === 0) return { status: "sem-dado" };
++
++  const totalVariaveisCombo = itensSelecionados.reduce((s, it) => s + it.calc.totalVariaveis, 0);
++  const custoFixoRateadoCombo = itensSelecionados.reduce((s, it) => s + it.calc.custoFixoRateado, 0);
++  const custoBaseCombo = totalVariaveisCombo + custoFixoRateadoCombo;
++
++  const somaPrecos = itensSelecionados.reduce((s, it) => s + it.calc.preco, 0);
++  if (somaPrecos <= 0) return { status: "sem-dado" };
++  const comissaoPctPonderada = itensSelecionados.reduce((s, it) => s + comissaoEfetiva(it, nd) * it.calc.preco, 0) / somaPrecos;
++  const taxaCartaoPctPonderada = itensSelecionados.reduce((s, it) => s + taxaEfetiva(it, nd) * it.calc.preco, 0) / somaPrecos;
++
++  const margensEfetivas = itensSelecionados.map((it) => ({
++    nome: it.nome,
++    margemPct: it.modo === "descobrir" ? N(it.margemPct) : it.calc.margemLiquidaPct,
++  }));
++  const menor = margensEfetivas.reduce((a, b) => (b.margemPct < a.margemPct ? b : a));
++
++  const soma = comissaoPctPonderada + taxaCartaoPctPonderada + nd.impostoPct + menor.margemPct;
++  if (soma >= 100) return { status: "trava-percentual" };
++
++  return {
++    status: "ok",
++    precoMinimoRecomendado: custoBaseCombo / (1 - soma / 100),
++    margemUsadaPct: menor.margemPct,
++    servicoMargemMenor: menor.nome,
++  };
++}
++
++/* Distância em linha reta (fórmula de haversine), em km. */
++export function distanciaKm(a, b) {
++  const R = 6371;
++  const rad = (x) => (x * Math.PI) / 180;
++  const dLat = rad(b.lat - a.lat);
++  const dLng = rad(b.lng - a.lng);
++  const h = Math.sin(dLat / 2) ** 2 + Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(dLng / 2) ** 2;
++  return 2 * R * Math.asin(Math.sqrt(h));
++}
++
++export function mediana(valores) {
++  const v = [...valores].sort((a, b) => a - b);
++  const m = Math.floor(v.length / 2);
++  return v.length % 2 ? v[m] : (v[m - 1] + v[m]) / 2;
++}
++
++/* Preço mais recente que cada concorrente tem anotado para um serviço.     */
++/* Assim, anotar o mesmo concorrente duas vezes não pesa em dobro.          */
++export function ultimoPrecoPorConcorrente(concorrentes, servicoId) {
++  return concorrentes.map((c) => {
++    const doServico = (c.precos || []).filter((p) => p.servicoId === servicoId && N(p.valor) > 0);
++    if (doServico.length === 0) return null;
++    const ultimo = doServico.reduce((a, b) => (b.data > a.data ? b : a));
++    return { concorrente: c, valor: N(ultimo.valor), data: ultimo.data };
++  }).filter(Boolean);
++}
++
++/* Piso do serviço: o preço que só cobre os custos, sem lucro (margem 0).   */
++export function pisoDoServico(s, nd) {
++  if (s.modo === "ja-tenho") {
++    const r = calcularReverso({ ...s, margemMetaPct: 0 }, nd);
++    return r.status === "ok" ? r.precoMinimo : null;
++  }
++  const r = calcularServico({ ...s, margemPct: 0 }, nd);
++  return r.status === "ok" ? r.preco : null;
++}
+--- /dev/null
++++ b/src/calculos.test.js
+@@ -0,0 +1,237 @@
++/* ======================================================================= */
++/* Testes das contas do Preço Justo (Vitest). Os valores esperados foram   */
++/* conferidos à mão e batem com o que o app mostra com "Carregar exemplo". */
++/* Se uma mudança alterar um destes números, o teste falha e o merge fica  */
++/* bloqueado até alguém confirmar que a conta nova está certa.             */
++/* ======================================================================= */
++import { describe, it, expect } from "vitest";
++import {
++  N, fmtPct, normalizarValorBR, ANEXO_III, ANEXO_V, aliquotaEfetiva,
++  calcularComissaoEquipe, comissaoEfetiva, calcularTaxaRecebimento, taxaEfetiva,
++  computeNegocioDerivado, calcularValorItemVariavel, calcularServico, calcularReverso,
++  calcularParaExibicao, montarDRE, montarDREMensal, calcularIndicadoresGerenciais,
++  calcularPrecoMinimoPacote, distanciaKm, mediana, ultimoPrecoPorConcorrente, pisoDoServico,
++} from "./calculos.js";
++
++/* Mesmo cenário do "Carregar exemplo": salão de 2 profissionais no Simples. */
++const negocioExemplo = () => ({
++  custosFixos: [
++    { id: "a", nome: "Aluguel do espaço", valor: "900", semCaixa: false },
++    { id: "b", nome: "Água, luz e internet", valor: "280", semCaixa: false },
++    { id: "c", nome: "Contador", valor: "180", semCaixa: false },
++    { id: "d", nome: "Depreciação", valor: "", semCaixa: true },
++  ],
++  insumosCompartilhados: [], profissionais: [], recebimento: {},
++  perfil: { segmento: "salao", modeloOperacao: "autonomo", cidade: "Feira de Santana" },
++  diasMes: "26", horasDia: "8", numeroProfissionais: "2", proLabore: "2200",
++  regime: "simples", meiDas: "", rbt12: "90000", folha12: "22000", atividadeSempreAnexoIII: true,
++  capitalInvestido: "8000", taxaRetorno: "0.8",
++});
++const servicosExemplo = () => [
++  { id: "corte", nome: "Corte Masculino", modo: "descobrir", custosVariaveis: [{ id: "1", modo: "direto", valor: "3" }],
++    comissaoPct: 30, taxaCartaoPct: 3, margemPct: 25, horasPorAtendimento: 0.5, atendimentosMes: 120 },
++  { id: "escova", nome: "Escova", modo: "descobrir", custosVariaveis: [{ id: "2", modo: "direto", valor: "5" }],
++    comissaoPct: 30, taxaCartaoPct: 3, margemPct: 25, horasPorAtendimento: 1, atendimentosMes: 55 },
++  { id: "coloracao", nome: "Coloração", modo: "descobrir",
++    custosVariaveis: [{ id: "3", modo: "direto", valor: "35" }, { id: "4", modo: "direto", valor: "2" }],
++    comissaoPct: 30, taxaCartaoPct: 3, margemPct: 30, horasPorAtendimento: 1.5, atendimentosMes: 28 },
++];
++const comCalc = (servicos, nd) => servicos.map((s) => ({ ...s, calc: calcularParaExibicao(s, nd) }));
++
++describe("leitura de valores no padrão brasileiro", () => {
++  it.each([
++    ["2.500", 2500], ["2.500,00", 2500], ["22.000", 22000], ["1.234.567", 1234567],
++    ["2500,50", 2500.5], ["4.800.000,00", 4800000], ["2.5", 2.5], ["2.50", 2.5], ["R$ 1.234,56", 1234.56],
++  ])("'%s' vira %d", (digitado, esperado) => {
++    expect(N(normalizarValorBR(digitado))).toBe(esperado);
++  });
++  it("mostra percentual com vírgula", () => {
++    expect(fmtPct(6, 2)).toBe("6,00%");
++    expect(fmtPct(27.777)).toBe("27,8%");
++  });
++});
++
++describe("Simples Nacional (LC 123/2006)", () => {
++  it("1ª faixa: a alíquota efetiva é a nominal", () => {
++    expect(aliquotaEfetiva(90000, ANEXO_III).aliqEfetiva).toBeCloseTo(0.06, 10);
++    expect(aliquotaEfetiva(90000, ANEXO_V).aliqEfetiva).toBeCloseTo(0.155, 10);
++  });
++  it("2ª faixa do Anexo III: (RBT12 × 11,2% − 9.360) ÷ RBT12", () => {
++    expect(aliquotaEfetiva(300000, ANEXO_III).aliqEfetiva).toBeCloseTo(24240 / 300000, 10);
++  });
++  it("acima de R$ 4,8 milhões sai do Simples", () => {
++    expect(aliquotaEfetiva(5000000, ANEXO_III)).toBeNull();
++  });
++  it("Fator R abaixo de 28% e sem a regra da atividade vai para o Anexo V", () => {
++    const nd = computeNegocioDerivado({ ...negocioExemplo(), atividadeSempreAnexoIII: false });
++    expect(nd.fatorR).toBeCloseTo(22000 / 90000, 10);
++    expect(nd.anexoUsado).toBe("V");
++    expect(nd.impostoPct).toBeCloseTo(15.5, 10);
++  });
++  it("Fator R de 28% ou mais vai para o Anexo III", () => {
++    const nd = computeNegocioDerivado({ ...negocioExemplo(), atividadeSempreAnexoIII: false, folha12: "30000" });
++    expect(nd.anexoUsado).toBe("III");
++  });
++});
++
++describe("negócio de exemplo", () => {
++  const nd = computeNegocioDerivado(negocioExemplo());
++  it("custo fixo, capacidade, custo por hora e imposto", () => {
++    expect(nd.custoFixoTotal).toBe(3560);
++    expect(nd.horasTotais).toBe(416);
++    expect(nd.custoFixoPorHora).toBeCloseTo(3560 / 416, 10);
++    expect(nd.impostoPct).toBeCloseTo(6, 10);
++    expect(nd.configurado).toBe(true);
++  });
++  it("preços pelo markup divisor (iguais aos do exemplo)", () => {
++    const [corte, escova, coloracao] = servicosExemplo().map((s) => calcularServico(s, nd));
++    expect(corte.preco).toBeCloseTo(20.22, 2);
++    expect(escova.preco).toBeCloseTo(37.66, 2);
++    expect(coloracao.preco).toBeCloseTo(160.76, 2);
++    // preço × (1 − 64%) = custo fixo rateado + variáveis
++    expect(corte.preco * 0.36).toBeCloseTo(nd.custoFixoPorHora * 0.5 + 3, 10);
++  });
++  it("Modo A e Modo B batem: cobrando o preço do Modo A, a margem é a meta", () => {
++    const corte = servicosExemplo()[0];
++    const a = calcularServico(corte, nd);
++    const b = calcularReverso({ ...corte, precoCobrado: a.preco, margemMetaPct: 25 }, nd);
++    expect(b.margemLiquidaPct).toBeCloseTo(25, 8);
++    expect(b.precoIdeal).toBeCloseTo(a.preco, 8);
++  });
++  it("trava quando os percentuais somam 100% ou mais", () => {
++    const r = calcularServico({ ...servicosExemplo()[0], margemPct: 61 }, nd);
++    expect(r.status).toBe("trava-percentual");
++  });
++  it("DRE gerencial do mês", () => {
++    const dre = montarDRE(comCalc(servicosExemplo(), nd), nd);
++    expect(dre.receitaBruta).toBeCloseTo(8998.96, 1);
++    expect(dre.margemContribuicaoTotal).toBeCloseTo(3818.37, 1);
++    expect(dre.resultadoOperacional).toBeCloseTo(258.37, 1);
++  });
++  it("pontos de equilíbrio, margem de segurança e GAO", () => {
++    const sc = comCalc(servicosExemplo(), nd);
++    const dre = montarDRE(sc, nd);
++    const ind = calcularIndicadoresGerenciais(sc.filter((s) => s.calc.status === "ok"), dre, nd, negocioExemplo());
++    expect(ind.peContabilRS).toBeCloseTo(8390.05, 1);
++    expect(ind.peFinanceiroRS).toBeCloseTo(8390.05, 1); // sem depreciação cadastrada
++    expect(ind.peEconomicoRS).toBeCloseTo(8540.89, 1); // + R$ 8.000 × 0,8%
++    expect(ind.custoOportunidadeMes).toBeCloseTo(64, 10);
++    expect(ind.margemSeguranca).toBeCloseTo(6.8, 1);
++    expect(ind.gao).toBeCloseTo(dre.margemContribuicaoTotal / dre.resultadoOperacional, 10);
++  });
++  it("piso do serviço: preço com margem zero", () => {
++    expect(pisoDoServico(servicosExemplo()[0], nd)).toBeCloseTo(11.93, 2);
++  });
++  it("preço mínimo de pacote usa a menor margem dos serviços escolhidos", () => {
++    const sc = comCalc(servicosExemplo(), nd);
++    const r = calcularPrecoMinimoPacote([sc[0], sc[2]], nd);
++    expect(r.status).toBe("ok");
++    expect(r.margemUsadaPct).toBe(25);
++  });
++  it("DRE de um fechamento antigo, sem aluguel, continua igual", () => {
++    const d = montarDREMensal({ faturamentoBruto: 1000, impostoPagoReal: 60, custosVariaveisReaisInformados: 300, custosFixosSnapshot: 500 });
++    expect(d.resultadoOperacional).toBe(140);
++  });
++});
++
++describe("custos variáveis", () => {
++  const ctx = { atendimentosMes: 120, diasMesNegocio: 26, insumosCompartilhados: [] };
++  it("por duração: R$ 80 que duram 45 dias", () => {
++    expect(calcularValorItemVariavel({ modo: "duracao", valorCompra: "80", duracaoValor: "45", duracaoUnidade: "dias" }, ctx))
++      .toBeCloseTo(80 / ((45 / 26) * 120), 10);
++  });
++  it("por unidade: caixa de 100 toucas a R$ 40, 1 por atendimento", () => {
++    expect(calcularValorItemVariavel({ modo: "unidade", valorCompra: "40", quantidadeComprada: "100", usoPorAtendimento: "1" }, ctx))
++      .toBeCloseTo(0.4, 10);
++  });
++});
++
++describe("comissão média da equipe e aluguel de cadeira (Bloco 4)", () => {
++  const equipe = [
++    { id: "ana", nome: "Ana", ativo: true, vinculo: "comissao", comissaoPct: "40", atendimentosMes: "80" },
++    { id: "bia", nome: "Bia", ativo: true, vinculo: "comissao", comissaoPct: "30", atendimentosMes: "60" },
++    { id: "maria", nome: "Maria", ativo: true, vinculo: "dono", atendimentosMes: "40" },
++    { id: "carla", nome: "Carla", ativo: true, vinculo: "aluguel", aluguelMes: "600" },
++  ];
++  it("média ponderada pelos atendimentos: (3.200 + 1.800 + 0) ÷ 180", () => {
++    const r = calcularComissaoEquipe(equipe);
++    expect(r.ponderada).toBe(true);
++    expect(r.pct).toBeCloseTo(5000 / 180, 10);
++    expect(r.participantes.map((p) => p.nome)).toEqual(["Ana", "Bia", "Maria"]);
++  });
++  it("sem atendimentos de alguém, vira média simples", () => {
++    const r = calcularComissaoEquipe([equipe[0], { ...equipe[1], atendimentosMes: "" }]);
++    expect(r.ponderada).toBe(false);
++    expect(r.pct).toBeCloseTo(35, 10);
++  });
++  it("com uma pessoa só, não há média", () => {
++    expect(calcularComissaoEquipe([equipe[0]])).toBeNull();
++  });
++  it("serviço antigo, sem comissaoModo, mantém a comissão própria", () => {
++    const nd = computeNegocioDerivado({ ...negocioExemplo(), profissionais: equipe });
++    expect(comissaoEfetiva({ comissaoPct: 30 }, nd)).toBe(30);
++    expect(comissaoEfetiva({ comissaoPct: 30, comissaoModo: "equipe" }, nd)).toBeCloseTo(27.78, 2);
++  });
++  it("aluguel recebido reduz o custo fixo a cobrir e entra no DRE como receita", () => {
++    const nd = computeNegocioDerivado({ ...negocioExemplo(), profissionais: equipe });
++    expect(nd.receitaAluguelCadeiras).toBe(600);
++    expect(nd.custoFixoLiquido).toBe(2960);
++    expect(nd.custoFixoPorHora).toBeCloseTo(2960 / 416, 10);
++    const dre = montarDRE(comCalc(servicosExemplo(), nd), nd);
++    expect(dre.aluguelRecebido).toBe(600);
++    expect(dre.resultadoOperacional).toBeCloseTo(dre.margemContribuicaoTotal - 3560 + 600, 10);
++    expect(dre.resultadoOperacional).toBeCloseTo(458.12, 1);
++  });
++});
++
++describe("taxa média de recebimento (Bloco 5)", () => {
++  const formas = {
++    dinheiro: { participacaoPct: "20" }, pix: { participacaoPct: "40", taxaPct: "0" },
++    debito: { participacaoPct: "25", taxaPct: "1.6" }, credito: { participacaoPct: "15", taxaPct: "3" },
++  };
++  it("(25 × 1,6 + 15 × 3) ÷ 100 = 0,85%", () => {
++    const r = calcularTaxaRecebimento(formas);
++    expect(r.completo).toBe(true);
++    expect(r.pct).toBeCloseTo(0.85, 10);
++  });
++  it("só vale como média do negócio quando soma 100%", () => {
++    const parcial = { dinheiro: formas.dinheiro, pix: formas.pix };
++    expect(calcularTaxaRecebimento(parcial).completo).toBe(false);
++    const nd = computeNegocioDerivado({ ...negocioExemplo(), recebimento: parcial });
++    expect(nd.taxaRecebimento).toBeNull();
++    expect(taxaEfetiva({ taxaCartaoPct: 3, taxaModo: "negocio" }, nd)).toBe(3);
++  });
++  it("dinheiro nunca tem taxa, mesmo se alguém digitar", () => {
++    const r = calcularTaxaRecebimento({ dinheiro: { participacaoPct: "100", taxaPct: "5" } });
++    expect(r.pct).toBe(0);
++  });
++  it("com a média, o preço é o mesmo de digitar a taxa à mão", () => {
++    const nd = computeNegocioDerivado({ ...negocioExemplo(), recebimento: formas });
++    const corte = servicosExemplo()[0];
++    const comMedia = calcularServico({ ...corte, taxaModo: "negocio" }, nd);
++    const aMao = calcularServico({ ...corte, taxaCartaoPct: 0.85 }, nd);
++    expect(comMedia.preco).toBeCloseTo(aMao.preco, 10);
++    expect(comMedia.taxaCartaoPct).toBeCloseTo(0.85, 10);
++  });
++});
++
++describe("comparação com a concorrência (Bloco 6)", () => {
++  it("mediana", () => {
++    expect(mediana([30, 18, 25])).toBe(25);
++    expect(mediana([1, 2, 3, 4])).toBe(2.5);
++  });
++  it("conta só o preço mais recente de cada concorrente", () => {
++    const c = [{ id: "x", precos: [
++      { servicoId: "corte", valor: 20, data: "2026-01-10" },
++      { servicoId: "corte", valor: 28, data: "2026-09-01" },
++      { servicoId: "escova", valor: 40, data: "2026-09-02" },
++    ] }];
++    const r = ultimoPrecoPorConcorrente(c, "corte");
++    expect(r).toHaveLength(1);
++    expect(r[0].valor).toBe(28);
++  });
++  it("distância: 1 grau de latitude ≈ 111,2 km", () => {
++    expect(distanciaKm({ lat: -12, lng: -38.9 }, { lat: -13, lng: -38.9 })).toBeCloseTo(111.19, 1);
++    expect(distanciaKm({ lat: -12.27, lng: -38.97 }, { lat: -12.27, lng: -38.97 })).toBe(0);
++  });
++});
+--- /dev/null
++++ b/tests/e2e/app.spec.js
+@@ -0,0 +1,80 @@
++// Fluxo principal do app no navegador: primeiro acesso, dados de exemplo e
++// cada aba abrindo sem erro e sem rolagem para o lado.
++import { test, expect } from "@playwright/test";
++
++async function primeiroAcesso(page) {
++  await page.goto("/");
++  const campos = page.locator("input");
++  await campos.nth(0).fill("Maria Teste");
++  await campos.nth(1).fill("Salão da Maria");
++  for (const opcao of ["Salão de Cabeleireiro", "Autônomo(a), sozinho(a)", null]) {
++    await page.getByRole("button", { name: "Continuar" }).click();
++    if (opcao) await page.getByText(opcao, { exact: true }).click();
++  }
++  await page.getByRole("button", { name: "Confirmar e ir pros custos fixos" }).click();
++  await page.getByRole("button", { name: "Carregar exemplo" }).click();
++}
++
++// Valores em reais saem com espaço não separável (R$ 1,00); \s cobre os dois.
++const reais = (valor) => new RegExp(`R\\$\\s${valor.replace(/\./g, "\\.")}`);
++const visivel = (page, texto) => page.getByText(texto).filter({ visible: true }).first();
++
++const irPara = (page, aba) => page.getByRole("button", { name: aba }).first().click();
++
++async function semRolagemLateral(page) {
++  const sobra = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
++  expect(sobra).toBeLessThanOrEqual(0);
++}
++
++test.beforeEach(async ({ page }) => {
++  const erros = [];
++  page.on("pageerror", (e) => erros.push(e.message));
++  page.erros = erros;
++});
++
++test.afterEach(async ({ page }) => {
++  expect(page.erros, "erros de JavaScript na página").toEqual([]);
++});
++
++test("exemplo carregado: Painel mostra o DRE e os pontos de equilíbrio certos", async ({ page }) => {
++  await primeiroAcesso(page);
++  await irPara(page, "Painel");
++  await expect(visivel(page, reais("8.998,96"))).toBeVisible(); // receita bruta
++  await expect(visivel(page, reais("258,37"))).toBeVisible(); // resultado operacional
++  await expect(visivel(page, reais("8.390,05"))).toBeVisible(); // ponto de equilíbrio contábil
++  await semRolagemLateral(page);
++});
++
++test("todas as abas abrem sem erro e sem rolagem lateral", async ({ page }) => {
++  await primeiroAcesso(page);
++  for (const aba of ["Negócio", "Calculadora", "Painel", "Estoque", /Observat/, "FAQ"]) {
++    await irPara(page, aba);
++    await page.waitForTimeout(600);
++    await semRolagemLateral(page);
++  }
++});
++
++test("Calculadora: serviço salvo do exemplo mantém o preço", async ({ page }) => {
++  await primeiroAcesso(page);
++  await irPara(page, "Calculadora");
++  await expect(page.getByText("Corte Masculino").first()).toBeVisible();
++  await expect(visivel(page, reais("20,22"))).toBeVisible();
++});
++
++test("Observatório: o mapa carrega e a comparação aparece com um preço anotado", async ({ page }) => {
++  await primeiroAcesso(page);
++  await irPara(page, /Observat/);
++  const mapa = page.locator(".mapa-concorrencia.leaflet-container");
++  await expect(mapa).toBeVisible();
++  await expect(page.locator(".leaflet-control-attribution")).toContainText("OpenStreetMap");
++  await page.getByRole("button", { name: "Adicionar concorrente sem marcar no mapa" }).click();
++  await page.getByPlaceholder("ex.: Barbearia do Zé").fill("Barbearia Teste");
++  await page.getByRole("button", { name: "Salvar concorrente" }).click();
++  await page.getByRole("button", { name: "anotar preço" }).click();
++  await page.getByRole("combobox").filter({ hasText: "Corte Masculino" }).first().selectOption({ label: "Corte Masculino" });
++  const preco = page.locator("xpath=//span[normalize-space(.)='Preço cobrado']/ancestor::label[1]//input");
++  await preco.fill("25");
++  await page.getByRole("button", { name: "Salvar preço" }).click();
++  await expect(visivel(page, /abaixo da mediana de 1 concorrente: R\$\s25,00/)).toBeVisible();
++  await expect(visivel(page, /Seu piso, sem lucro, é R\$\s11,93/)).toBeVisible();
++});
+--- /dev/null
++++ b/playwright.config.js
+@@ -0,0 +1,28 @@
++// Testes de navegador (Playwright): abrem o app de verdade, já compilado,
++// e passam pelas telas como um usuário. Rodam no GitHub a cada Pull Request.
++import { defineConfig, devices } from "@playwright/test";
++
++export default defineConfig({
++  testDir: "tests/e2e",
++  timeout: 60_000,
++  fullyParallel: true,
++  forbidOnly: !!process.env.CI,
++  retries: process.env.CI ? 1 : 0,
++  reporter: process.env.CI ? [["github"], ["list"]] : "list",
++  use: {
++    baseURL: "http://localhost:4173",
++    locale: "pt-BR",
++    timezoneId: "America/Bahia",
++    trace: "retain-on-failure",
++  },
++  projects: [
++    { name: "celular", use: { ...devices["Pixel 5"], viewport: { width: 375, height: 812 } } },
++    { name: "computador", use: { ...devices["Desktop Chrome"], viewport: { width: 1280, height: 900 } } },
++  ],
++  // Serve o build de produção (dist/). Rode "npm run build" antes.
++  webServer: {
++    command: "npx vite preview --port 4173 --strictPort",
++    url: "http://localhost:4173",
++    reuseExistingServer: !process.env.CI,
++  },
++});
+--- /dev/null
++++ b/.github/workflows/qualidade.yml
+@@ -0,0 +1,55 @@
++# Esteira de qualidade (Bloco 8): roda em todo Pull Request para a main e em
++# todo merge. Se as contas, o build ou o teste no navegador falharem, o PR fica
++# marcado com ❌ e (com a regra de proteção da main) o merge é bloqueado.
++name: Qualidade
++
++on:
++  pull_request:
++    branches: [main]
++  push:
++    branches: [main]
++
++permissions:
++  contents: read
++
++concurrency:
++  group: qualidade-${{ github.ref }}
++  cancel-in-progress: true
++
++jobs:
++  testes:
++    name: Testes e build
++    runs-on: ubuntu-latest
++    timeout-minutes: 20
++    steps:
++      - uses: actions/checkout@v4
++
++      - uses: actions/setup-node@v4
++        with:
++          node-version: 22
++          cache: npm
++
++      - name: Instalar dependências
++        run: npm ci
++
++      - name: Testes das contas (Vitest, com cobertura mínima)
++        run: npm run test:cobertura
++
++      - name: Build de produção (PWA e arquivo único)
++        run: |
++          npm run build
++          npm run build:single
++
++      - name: Instalar o navegador dos testes
++        run: npx playwright install --with-deps chromium
++
++      - name: Testes no navegador (Playwright, celular e computador)
++        run: npm run test:e2e
++
++      - name: Guardar o relatório se algum teste falhar
++        if: failure()
++        uses: actions/upload-artifact@v4
++        with:
++          name: relatorio-dos-testes
++          path: test-results/
++          retention-days: 7
+--- a/vite.config.js
++++ b/vite.config.js
+@@ -31,4 +31,14 @@
+       },
+     }),
+   ],
++  // Testes unitários (Vitest). Os testes de navegador ficam em tests/e2e (Playwright).
++  test: {
++    include: ["src/**/*.test.js"],
++    environment: "node",
++    coverage: {
++      provider: "v8", include: ["src/calculos.js"], reporter: ["text", "text-summary"],
++      // Piso de cobertura: uma conta nova sem teste derruba a verificação.
++      thresholds: { lines: 85, functions: 80 },
++    },
++  },
+ });
+--- a/package.json
++++ b/package.json
+@@ -8,7 +8,10 @@
+     "dev": "vite",
+     "build": "vite build",
+     "build:single": "vite build --config vite.single.config.js",
+-    "preview": "vite preview"
++    "preview": "vite preview",
++    "test": "vitest run",
++    "test:cobertura": "vitest run --coverage",
++    "test:e2e": "playwright test"
+   },
+   "dependencies": {
+     "leaflet": "1.9.4",
+@@ -19,12 +22,15 @@
+     "xlsx": "0.18.5"
+   },
+   "devDependencies": {
++    "@playwright/test": "1.56.0",
+     "@vitejs/plugin-react": "^4.3.1",
++    "@vitest/coverage-v8": "2.1.9",
+     "autoprefixer": "^10.4.19",
+     "postcss": "^8.4.38",
+     "tailwindcss": "^3.4.4",
+     "vite": "^5.3.1",
+     "vite-plugin-pwa": "^0.20.0",
+-    "vite-plugin-singlefile": "^2.0.2"
++    "vite-plugin-singlefile": "^2.0.2",
++    "vitest": "2.1.9"
+   }
+ }

@@ -54,14 +54,16 @@ Antes de finalizar, revise a interface como **designer de produto sênior** e co
 
 - **React 18 + Vite 5 + Tailwind CSS 3**, gráficos com **Recharts**, ícones **lucide-react**, exportação Excel com **xlsx**, mapa com **Leaflet** 1.9.4 sobre o **OpenStreetMap**.
 - PWA via **vite-plugin-pwa** (instalável, funciona offline).
-- Código principal em um único arquivo: `src/App.jsx` (~7.500 linhas), com componentes reutilizáveis definidos no próprio arquivo. Exceção: `src/MapaConcorrencia.jsx`, carregado sob demanda (`React.lazy`) para o Leaflet não pesar no resto do app.
+- Telas e componentes em `src/App.jsx` (~7.500 linhas), com componentes reutilizáveis definidos no próprio arquivo.
+- **Contas em `src/calculos.js`** (funções puras, sem React): leitura de valores, Simples Nacional, motores de preço (Modo A e B), custos variáveis, comissão e taxa médias, DRE, pontos de equilíbrio, pacote e comparação com a concorrência. Testadas em `src/calculos.test.js`.
+- `src/MapaConcorrencia.jsx`: mapa do Observatório, carregado sob demanda (`React.lazy`) para o Leaflet não pesar no resto do app.
 - Persistência: `window.storage` com fallback para `localStorage` (`listarComFallback()`), tudo no dispositivo do usuário.
 - Autenticação com Supabase: **pausada** (não está em uso nesta versão).
 - Deploy: **Vercel**, conectada a este repositório (push na `main` = deploy; cada PR ganha URL de preview).
 
 ## 5. Estado atual e próximos passos
 
-As melhorias foram organizadas em **7 blocos**, um PR por bloco, por ordem de risco e dependência (detalhes em `docs/analise-critica.md`).
+As melhorias foram organizadas em **blocos** (os 7 da análise inicial e os seguintes), um PR por bloco, por ordem de risco e dependência (detalhes em `docs/analise-critica.md`).
 
 | Bloco | Conteúdo | Status |
 |---|---|---|
@@ -72,6 +74,16 @@ As melhorias foram organizadas em **7 blocos**, um PR por bloco, por ordem de ri
 | 5 | Taxa média de recebimento: formas de pagamento no Negócio (dinheiro, Pix, débito, crédito à vista e parcelado) com média ponderada, usada por serviço como a comissão média; ajustes visuais da Calculadora | ✅ Implementado (`docs/bloco-5-issues-e-pr.md`) |
 | 6 | Observatório: mapa da concorrência (Leaflet + OpenStreetMap) em Feira de Santana, Irará e Salvador, com marcação por toque; preços dos concorrentes anotados pelo usuário e comparação com os preços dele (mediana, faixa e piso), com raio de distância | ✅ Implementado (`docs/bloco-6-issues-e-pr.md`) |
 | 7 | Polimento visual (decidido com o Daniel): quebra de linha equilibrada (`text-wrap`), largura máxima de linha, rótulos sem vão ao quebrar, seções do Negócio sem linhas divisórias redundantes, títulos de seção sem corte, selos longos como nota de rodapé | ✅ Implementado (`docs/bloco-7-issue-e-pr.md`) |
+| 8 | Esteira de qualidade: contas separadas em `src/calculos.js`, 38 testes das contas (Vitest), testes no navegador (Playwright) e verificação no GitHub (Actions) em cada PR | ✅ Implementado (`docs/bloco-8-issue-e-pr.md`) |
+| 9 | Não perder trabalho: trocar de aba sem apagar o que foi digitado; aviso de "nova versão disponível" | Próximo |
+| 10 | Excel do Observatório (concorrentes e preços anotados) | Pendente |
+
+### Esteira de qualidade (Bloco 8) — vale para toda mudança
+- **Toda conta nova ou alterada vai para `src/calculos.js`, com teste em `src/calculos.test.js`.** Os valores esperados devem ser conferidos à mão e explicados no teste. A cobertura mínima de `calculos.js` é de 85% das linhas e 80% das funções; abaixo disso, a verificação falha.
+- Testes de navegador em `tests/e2e/` (Playwright, celular 375 px e computador 1280 px): primeiro acesso, exemplo carregado, valores do Painel, todas as abas sem erro de JavaScript e sem rolagem lateral, Calculadora e Observatório. Fluxo novo importante ganha teste aqui.
+- `.github/workflows/qualidade.yml` roda tudo em cada Pull Request para a `main`: `npm ci`, `npm run test:cobertura`, os dois builds e `npm run test:e2e`. A `main` deve ter a regra de proteção exigindo a verificação **"Testes e build"** antes do merge.
+- Rodar localmente: `npm test` (contas), `npm run test:cobertura`, `npm run build && npm run test:e2e` (navegador; na primeira vez, `npx playwright install chromium`).
+- Se um teste falhar porque a conta mudou de propósito, atualize o valor esperado **no mesmo PR** e explique a mudança na descrição.
 
 ### Regras de tipografia e espaçamento (Bloco 7)
 - **Alinhamento sempre à esquerda. Não justificar texto:** em colunas estreitas e sem hifenização em português, o justificado abre "rios" de espaço entre as palavras e piora a leitura (WCAG 1.4.8). Decisão tomada com o Daniel.
@@ -123,6 +135,7 @@ As melhorias foram organizadas em **7 blocos**, um PR por bloco, por ordem de ri
 - **[Dado]** A data exata da coleta dos estabelecimentos do Observatório não foi registrada. A tela mostra "até agosto de 2026" (limite comprovado pelo build de 16/08/2026). Ao refazer a coleta, preencher `COLETA_ESTABELECIMENTOS.data` em `src/App.jsx`.
 - **[Tributário — confirmar com contador]** Lei do Salão-Parceiro (Lei 13.352/2016): no contrato de parceria, a cota-parte repassada ao profissional-parceiro não integra a receita bruta do salão-parceiro. O app ainda trata o preço inteiro do serviço como receita do salão (e calcula o imposto sobre ele), o que superestima o imposto de quem usa esse contrato. Vale um bloco próprio, com validação de um contador.
 - **[Melhoria]** O app baixa a versão nova em segundo plano, mas não avisa: quem abre pelo ícone da tela inicial pode ver a versão anterior até reabrir. Mostrar "Nova versão disponível — toque para atualizar".
-- **[Qualidade]** O projeto ainda não tem testes automatizados no repositório. Os blocos 1 a 3 foram validados com roteiros Playwright fora do repositório. Candidatos óbvios para os primeiros testes: `normalizarValorBR`, `aliquotaEfetiva`, `computeNegocioDerivado` e os pontos de equilíbrio.
+- **[Qualidade — próximo passo]** Lint e formatação automáticos (Biome) e cobertura de ramos (hoje 66%) ficaram de fora do Bloco 8 para não misturar milhares de mudanças de formatação com a esteira. Entram em um PR próprio.
+- **[Documento]** Rascunho dos termos de uso e da política de privacidade, para revisão jurídica antes de entrar no app.
 - **[Correção]** Mudar de aba descarta alterações ainda não salvas (o auto-salvar do Negócio espera 1,2 s; o rascunho de serviço novo da Calculadora não é guardado). Já existia antes dos blocos; vale tratar em bloco próprio.
 - **[Segurança]** A biblioteca `xlsx` 0.18.5 tem alertas conhecidos (prototype pollution e ReDoS) que afetam a **leitura** de planilhas. O app hoje só **gera** planilhas (não lê arquivos do usuário), então o risco prático é baixo — reavaliar se um dia o app passar a importar `.xlsx`.
