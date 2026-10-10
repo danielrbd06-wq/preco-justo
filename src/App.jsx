@@ -1875,12 +1875,15 @@ function FormasPagamento({ recebimento, onChange }) {
               : entrada(f, "taxaPct", "taxa cobrada")}
           </React.Fragment>
         ))}
-        <span className="text-xs font-semibold pt-1" style={{ color: t.text, borderTop: `1px solid ${t.border}` }}>Total</span>
-        <span className="text-xs font-semibold font-num pt-1 text-right pr-4"
-          style={{ color: calc && !calc.completo ? t.warningText : t.text, borderTop: `1px solid ${t.border}` }}>
+        {/* Uma linha só, de ponta a ponta: com a borda em cada célula, o espaço entre */}
+        {/* as colunas partia o traço em três pedaços.                                */}
+        <div className="col-span-3 mt-0.5" style={{ height: 1, background: t.border }} />
+        <span className="text-xs font-semibold" style={{ color: t.text }}>Total</span>
+        <span className="text-xs font-semibold font-num text-right pr-4"
+          style={{ color: calc && !calc.completo ? t.warningText : t.text }}>
           {fmtPct(calc ? calc.soma : 0, 0)}
         </span>
-        <span className="pt-1 self-stretch" style={{ borderTop: `1px solid ${t.border}` }} />
+        <span />
       </div>
 
       {calc && !calc.completo && (
