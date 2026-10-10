@@ -1,0 +1,180 @@
+--- a/src/App.jsx
++++ b/src/App.jsx
+@@ -703,6 +703,18 @@
+   };
+   const s = map[tipo];
+   const Icon = s.icon;
++  // Texto longo (fonte legal, documento sindical) não cabe numa "pílula": no celular
++  // virava um balão de 5 linhas com o ícone solto. Acima de 45 caracteres o selo vira
++  // uma nota de rodapé — mesma cor e ícone, sem fundo nem borda, alinhada à esquerda.
++  const textoPlano = React.Children.toArray(children).filter((c) => typeof c === "string" || typeof c === "number").join("");
++  if (textoPlano.length > 45) {
++    return (
++      <span className="flex items-start gap-1.5 text-[11px] leading-snug text-left" style={{ color: s.fg }}>
++        <Icon size={12} strokeWidth={2.5} className="shrink-0 mt-[1px]" aria-hidden="true" />
++        <span>{children}</span>
++      </span>
++    );
++  }
+   return (
+     <span
+       className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium tracking-wide"
+@@ -757,7 +769,7 @@
+ /* ======================================================================= */
+ /* App                                                                      */
+ /* ======================================================================= */
+-const VERSAO_APP = "v7.10";
++const VERSAO_APP = "v7.11";
+ const CHAVE_TEMA = "preco-justo:tema";
+ 
+ /* Rede de segurança: se qualquer aba travar por um motivo que eu não       */
+@@ -931,6 +943,20 @@
+           * { font-family: 'Poppins', sans-serif; }
+           .font-poppins { font-family: 'Poppins', sans-serif; }
+           .font-num { font-variant-numeric: tabular-nums; }
++          /* Tipografia de leitura (Bloco 7). Alinhamento sempre à esquerda — nunca        */
++          /* justificado: em colunas estreitas e sem hifenização o justificado abre "rios" */
++          /* de espaço entre as palavras e piora a leitura (WCAG 1.4.8).                   */
++          /* pretty: evita palavra sozinha na última linha dos parágrafos.                */
++          /* balance: equilibra o tamanho das linhas em títulos curtos.                    */
++          p, li, label { text-wrap: pretty; }
++          h1, h2, h3, .font-semibold { text-wrap: balance; }
++          /* Largura máxima de linha (~75 caracteres): no computador os textos de apoio   */
++          /* corriam a largura inteira dos cartões. Blocos centralizados continuam no meio. */
++          main p { max-width: 75ch; }
++          /* Legendas pequenas (10-12px): "ch" encolhe com a letra e 75ch viraria ~450px,  */
++          /* quebrando frases curtas em duas linhas com vazio à direita. Limite fixo maior. */
++          main p:where(.text-xs, .text-\\[11px\\], .text-\\[10px\\]) { max-width: 42rem; }
++          main .text-center p, main p.text-center { margin-left: auto; margin-right: auto; }
+           .skeleton-shimmer {
+             background: linear-gradient(90deg, ${t.surfaceAlt} 25%, ${t.border} 37%, ${t.surfaceAlt} 63%);
+             background-size: 400% 100%;
+@@ -1326,7 +1352,9 @@
+     // alugadas" é longa) — o mesmo bug de antes (barra de baixo, resumo das seções),
+     // só que num terceiro lugar. Corrigindo aqui uma vez só, em vez de campo por campo.
+     <label className="block min-w-0">
+-      <span className="text-xs font-medium" style={{ color: t.textMuted }}>{label}{ajuda && <Ajuda texto={ajuda} faq={faq} />}</span>
++      {/* block + leading-snug: como span em linha, o rótulo pequeno herdava a altura de linha */}
++      {/* do texto base (24px) e, ao quebrar em duas linhas, ficava com um vão entre elas.    */}
++      <span className="block text-xs font-medium leading-snug" style={{ color: t.textMuted }}>{label}{ajuda && <Ajuda texto={ajuda} faq={faq} />}</span>
+       <div className="mt-1">{children}</div>
+       {hint && <p className="text-[11px] mt-1" style={{ color: t.textMuted }}>{hint}</p>}
+     </label>
+@@ -1403,8 +1431,12 @@
+       <button onClick={() => setAberto((v) => !v)} className="btn-press touch-target flex items-center justify-between w-full px-3 py-2.5" aria-expanded={aberto}>
+         <span className="flex items-center gap-1.5 min-w-0">
+           {Icon && <Icon size={14} style={{ color: t.primaryText, flexShrink: 0 }} />}
+-          <span className="text-sm font-semibold text-left truncate min-w-0" style={{ color: t.text }}>{titulo}</span>
+-          {ajuda && <span onClick={(e) => e.stopPropagation()}><Ajuda texto={ajuda} faq={faq} /></span>}
++          {/* O "?" fica dentro do título para acompanhar a última palavra quando ele quebra */}
++          {/* em duas linhas; como irmão no flex, ia parar longe do texto, junto da seta.    */}
++          <span className="text-sm font-semibold text-left leading-snug min-w-0" style={{ color: t.text }}>
++            {titulo}
++            {ajuda && <span onClick={(e) => e.stopPropagation()}><Ajuda texto={ajuda} faq={faq} /></span>}
++          </span>
+         </span>
+         <span className="flex items-center gap-2 min-w-0">
+           {!aberto && resumo && <span className="text-[11px] truncate max-w-[42vw] min-w-0" style={{ color: t.textMuted }}>{resumo}</span>}
+@@ -1798,9 +1830,9 @@
+       {configuradoSalvo && (
+         <div className="lg:col-span-2 min-w-0">
+           {!confirmandoExemplo ? (
+-            <button onClick={clicouCarregarExemplo} className="btn-press touch-target text-[11px] font-medium inline-flex items-center gap-1"
++            <button onClick={clicouCarregarExemplo} className="btn-press touch-target text-[11px] font-medium inline-flex items-start gap-1 text-left"
+               style={{ color: t.textMuted }}>
+-              <Sparkles size={11} /> recarregar dados de exemplo (substitui o que está preenchido)
++              <Sparkles size={11} className="shrink-0 mt-[2px]" /> recarregar dados de exemplo (substitui o que está preenchido)
+             </button>
+           ) : (
+             <div className="pop-in flex items-center gap-2 flex-wrap text-xs rounded-xl p-2.5" style={{ background: t.dangerSoft, color: t.danger }}>
+@@ -1860,7 +1892,9 @@
+         )}
+       </div>
+ 
+-      <div className="rounded-2xl p-5 space-y-6 min-w-0" style={cardStyle}>
++      {/* space-y-3 e sem linhas divisórias: cada seção já é um cartão com borda; a linha  */}
++      {/* entre eles somava ~50px de vão, contra 12px entre os cartões do Painel.         */}
++      <div className="rounded-2xl p-5 space-y-3 min-w-0" style={cardStyle}>
+         <SecaoColapsavel
+           resumo={`${n.custosFixos.length} conta${n.custosFixos.length === 1 ? "" : "s"} · ${fmtBRL(n.custosFixos.reduce((s, c) => s + N(c.valor), 0))}/mês`}
+           abertoInicial={!configuradoSalvo}
+@@ -1897,8 +1931,6 @@
+           </button>
+         </SecaoColapsavel>
+ 
+-        <div style={{ height: 1, background: t.border }} />
+-
+         <SecaoColapsavel resumo={`${(n.profissionais || []).filter((p) => p.ativo !== false).length} ativo(s)`} titulo="Profissionais" icon={Building2}
+           ajuda={`Cadastre quem atende n${termoEstabelecimento(n.perfil?.segmento).artigo} ${termoEstabelecimento(n.perfil?.segmento).termo} pra poder dividir o faturamento por pessoa no Fechamento Mensal. Não muda o rateio de custo fixo — isso continua vindo do campo 'número de profissionais' mais abaixo.`}>
+           <p className="text-[11px] mb-2" style={{ color: t.textMuted }}>
+@@ -1930,8 +1962,6 @@
+           </button>
+         </SecaoColapsavel>
+ 
+-        <div style={{ height: 1, background: t.border }} />
+-
+         <SecaoColapsavel resumo={`${(n.insumosCompartilhados || []).length} cadastrado(s)`} titulo="Insumos compartilhados entre serviços" icon={Sparkles}>
+           <p className="text-[11px] mb-2" style={{ color: t.textMuted }}>
+             Coisas como shampoo, touca ou luva costumam ser usadas em vários serviços. Cadastre aqui uma vez só — depois,
+@@ -1955,8 +1985,6 @@
+           )}
+         </SecaoColapsavel>
+ 
+-        <div style={{ height: 1, background: t.border }} />
+-
+         <SecaoColapsavel resumo={`${nd.horasTotais || 0}h/mês`} abertoInicial={!configuradoSalvo} titulo="Capacidade produtiva" icon={Clock3}>
+           <div className="grid grid-cols-3 gap-2">
+             <Campo label="Número de profissionais" hint="incluindo você — MEI sozinho(a) = 1">
+@@ -1989,8 +2017,6 @@
+           )}
+         </SecaoColapsavel>
+ 
+-        <div style={{ height: 1, background: t.border }} />
+-
+         <SecaoColapsavel resumo={N(n.proLabore) > 0 ? `${fmtBRL(N(n.proLabore))}/mês` : "não definido"} abertoInicial={!configuradoSalvo} titulo="Pró-labore do dono" icon={PiggyBank}
+           ajuda="É o seu próprio salário. Mesmo trabalhando pra si, seu tempo tem custo — se não colocar isso aqui, o app vai achar que seu trabalho é de graça." faq="o-que-e-pro-labore">
+           <Campo label="Quanto você retira do negócio por mês (ou pagaria a si mesmo por essa função)" hint="Erro clássico de MEI/microempresa: não contar o próprio trabalho como custo.">
+@@ -2004,8 +2030,6 @@
+           )}
+         </SecaoColapsavel>
+ 
+-        <div style={{ height: 1, background: t.border }} />
+-
+         <SecaoColapsavel resumo="consulta" titulo="Referência salarial sindical (consulta)" icon={Landmark}>
+           <div className="flex gap-2 items-start rounded-xl p-3 text-xs mb-3" style={{ background: t.warningSoft, color: t.warningText }}>
+             <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+@@ -2032,8 +2056,6 @@
+           </div>
+         </SecaoColapsavel>
+ 
+-        <div style={{ height: 1, background: t.border }} />
+-
+         <SecaoColapsavel resumo={n.regime === "indefinido" ? "não definido" : n.regime === "mei" ? "MEI" : `Simples · ${fmtPct(nd.impostoPct, 1)}`} abertoInicial={!configuradoSalvo} titulo="Regime tributário" icon={Landmark}>
+           <div className="flex gap-1.5 mb-3">
+             {[
+@@ -2107,8 +2129,6 @@
+           )}
+         </SecaoColapsavel>
+ 
+-        <div style={{ height: 1, background: t.border }} />
+-
+         <SecaoColapsavel resumo={N(n.capitalInvestido) > 0 ? `${fmtBRL(N(n.capitalInvestido))} investido` : "não definido"} titulo="Para o ponto de equilíbrio econômico" icon={TrendingUp}
+           faq="ponto-de-equilibrio"
+           ajuda="Opcional. Serve pra responder: o negócio rende mais do que se esse dinheiro estivesse aplicado no banco? Se rende menos, você está trabalhando sem o retorno que o risco do negócio exige.">
+@@ -5930,14 +5950,14 @@
+ 
+       <div className="flex gap-2 items-start rounded-xl p-3 text-xs" style={{ background: t.surfaceAlt, color: t.textMuted }}>
+         <CalendarCheck size={14} className="mt-0.5 shrink-0" />
+-        <span>
++        <p className="text-xs">
+           <strong style={{ color: t.text }}>Retrato de uma coleta única</strong>, feita
+           {COLETA_ESTABELECIMENTOS.data
+             ? ` em ${new Date(COLETA_ESTABELECIMENTOS.data + "T12:00:00").toLocaleDateString("pt-BR")}`
+             : ` até ${COLETA_ESTABELECIMENTOS.limiteComprovado}`}
+           {" "}em {COLETA_ESTABELECIMENTOS.fonte}. A lista não se atualiza sozinha: estabelecimentos podem ter aberto,
+           fechado ou mudado de avaliação desde então.
+-        </span>
++        </p>
+       </div>
+ 
+       <div className="grid sm:grid-cols-2 gap-3">
