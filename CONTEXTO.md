@@ -69,7 +69,7 @@ As melhorias foram organizadas em **7 blocos**, um PR por bloco, por ordem de ri
 | 2 | Dicas "?" com link para a explicação completa do FAQ; rótulo "dado real" / "exemplo" / "projeção" no DRE; aviso de coleta única no Observatório; correção do "Carregar exemplo" (Issue #4) | ✅ Implementado (`docs/bloco-2-issues-e-pr.md`) |
 | 3 | Fator R/Anexo em linguagem natural (padrão semáforo); escada dos 3 pontos de equilíbrio com margem de segurança; leitura de valores no padrão brasileiro (Issue #11); percentuais com vírgula | ✅ Implementado (`docs/bloco-3-issues-e-pr.md`) |
 | 4 | Comissão média da equipe ponderada pelos atendimentos; aluguel de cadeira nos dois lados (dono recebe: receita; profissional que aluga: custo fixo ou % por serviço) | ✅ Implementado (`docs/bloco-4-issues-e-pr.md`) |
-| 5 | Calculadora guiada de taxa de cartão ponderada | Pendente |
+| 5 | Taxa média de recebimento: formas de pagamento no Negócio (dinheiro, Pix, débito, crédito à vista e parcelado) com média ponderada, usada por serviço como a comissão média; ajustes visuais da Calculadora | ✅ Implementado (`docs/bloco-5-issues-e-pr.md`) |
 | 6 | Benchmarking regional agregado e mapa (Leaflet + OpenStreetMap) | Pendente |
 | 7 | Polimento visual (decidido com o Daniel): quebra de linha equilibrada (`text-wrap`), largura máxima de linha, rótulos sem vão ao quebrar, seções do Negócio sem linhas divisórias redundantes, títulos de seção sem corte, selos longos como nota de rodapé | ✅ Implementado (`docs/bloco-7-issue-e-pr.md`) |
 
@@ -96,6 +96,13 @@ As melhorias foram organizadas em **7 blocos**, um PR por bloco, por ordem de ri
 - **Aluguel de cadeiras recebido** (`nd.receitaAluguelCadeiras`): é **receita**, em linha própria no DRE ("(+) Aluguel de cadeiras recebido"), nunca custo negativo. Para o preço e os pontos de equilíbrio, use o custo fixo líquido (`nd.custoFixoLiquido`, `dre.custosFixosLiquidos`). Fechamentos guardam `aluguelRecebidoSnapshot`; os antigos não têm o campo (vale 0).
 - Quem aluga cadeira não entra na comissão média nem no "número de profissionais" da capacidade produtiva.
 - Modelo de operação `locatario` (quem aluga cadeira em outro salão): aluguel fixo vai para "Aluguel do espaço" (custo fixo); aluguel em % por serviço vai no campo de comissão, rotulado "% que fica com o salão".
+
+### Formas de pagamento e taxa média de recebimento (Bloco 5)
+- `n.recebimento` guarda, por forma (`FORMAS_PAGAMENTO`: `dinheiro`, `pix`, `debito`, `credito`, `parcelado`), `participacaoPct` (parte das vendas) e `taxaPct`. Dinheiro não tem taxa. **Nenhuma taxa vem preenchida**: cada maquininha e banco cobra diferente; o número vem do extrato do usuário.
+- **Taxa média** (`calcularTaxaRecebimento`): média das taxas ponderada pela parte das vendas. Só vale como média do negócio (`nd.taxaRecebimento`) quando as partes somam 100% (tolerância de 0,5 ponto); antes disso, a tela mostra quanto falta.
+- Cada serviço tem `taxaModo`: `negocio` ou `propria`. **Use sempre `taxaEfetiva(servico, nd)`** para saber a taxa que entra no preço (motores, pacote, Fechamento, Excel). Serviços salvos antes do Bloco 5 não têm o campo e mantêm a taxa própria.
+- Crédito parcelado é uma linha só, com a taxa média já somada à da antecipação, quando houver (decisão com o Daniel). Mensalidade ou aluguel da maquininha é custo fixo, não entra na taxa.
+- Seleção "média ou própria" e a caixa "de onde a média saiu" são componentes compartilhados: **`SeletorOrigem`** e **`ComposicaoMedia`**. Use-os para qualquer novo valor médio do negócio que um serviço possa adotar.
 
 ### Formatação e leitura de números (padrão brasileiro)
 - Exibição: `fmtBRL` (R$ 2.500,00) e `fmtPct` (6,00%), sempre com vírgula decimal.
