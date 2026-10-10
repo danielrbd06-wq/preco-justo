@@ -66,12 +66,18 @@ As melhorias foram organizadas em **6 blocos**, um PR por bloco, por ordem de ri
 | Bloco | Conteúdo | Status |
 |---|---|---|
 | 1 | Travas de jornada (31 dias / 24 h), modo "por duração" como padrão em novo custo variável, aviso de regime indefinido na Calculadora | ✅ Implementado (`docs/bloco-1-issues-e-pr.md`) |
-| 2 | Conteúdo do FAQ em tooltips; rótulo "dado real" vs. "projeção" no DRE; data de coleta no Observatório | Pendente |
+| 2 | Dicas "?" com link para a explicação completa do FAQ; rótulo "dado real" / "exemplo" / "projeção" no DRE; aviso de coleta única no Observatório; correção do "Carregar exemplo" (Issue #4) | ✅ Implementado (`docs/bloco-2-issues-e-pr.md`) |
 | 3 | Fator R/Anexo em linguagem natural (padrão semáforo); explicação dos 3 pontos de equilíbrio | Pendente |
 | 4 | Comissão por profissional (opcional); modo "aluguel de cadeira" | Pendente |
 | 5 | Calculadora guiada de taxa de cartão ponderada | Pendente |
 | 6 | Benchmarking regional agregado e mapa (Leaflet + OpenStreetMap) | Pendente |
 
-### Achados para virar Issue
-- **[Correção]** Ao clicar em "Carregar exemplo", o perfil do negócio é apagado e o assistente inicial ("Vamos te conhecer rapidinho") volta a aparecer na aba Negócio. Comportamento já existia antes do Bloco 1.
+### Componentes de explicação (reutilize, não recrie)
+- **`Ajuda`** — o "?" ao lado de um campo. Aceita `texto` (dica curta) e `faq` (id de uma pergunta de `FAQ_DADOS`, que adiciona o link "Entender melhor"). O balão é renderizado num portal com posição fixa, para não ser cortado por seções com `overflow: hidden` nem sair da tela no celular. `Campo`, `CampoPct` e `SecaoColapsavel` repassam `ajuda` e `faq`.
+- **`PainelExplicacao`** — mostra a resposta completa do FAQ por cima da tela (bottom sheet no celular, diálogo centralizado no computador). **Não troque de aba para explicar algo:** trocar de aba descarta o que ainda não foi salvo (rascunho de serviço novo e os últimos segundos digitados no Negócio).
+- **`Selo`** — selos de origem do dado: `real`, `calculado`, `aguardando`, `legal`. Todo número exibido deve deixar claro se é dado real, projeção ou exemplo.
+
+### Pendências e achados para virar Issue
+- **[Dado]** A data exata da coleta dos estabelecimentos do Observatório não foi registrada. A tela mostra "até agosto de 2026" (limite comprovado pelo build de 16/08/2026). Ao refazer a coleta, preencher `COLETA_ESTABELECIMENTOS.data` em `src/App.jsx`.
+- **[Correção]** Mudar de aba descarta alterações ainda não salvas (o auto-salvar do Negócio espera 1,2 s; o rascunho de serviço novo da Calculadora não é guardado). Já existia antes dos blocos; vale tratar em bloco próprio.
 - **[Segurança]** A biblioteca `xlsx` 0.18.5 tem alertas conhecidos (prototype pollution e ReDoS) que afetam a **leitura** de planilhas. O app hoje só **gera** planilhas (não lê arquivos do usuário), então o risco prático é baixo — reavaliar se um dia o app passar a importar `.xlsx`.
