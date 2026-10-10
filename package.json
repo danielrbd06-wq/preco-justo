@@ -1,0 +1,29 @@
+{
+  "name": "preco-justo",
+  "private": true,
+  "version": "1.1.0",
+  "description": "Precificação e gestão gerencial para salões de beleza, barbearias e estúdios de beleza da Bahia.",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "build:single": "vite build --config vite.single.config.js",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "lucide-react": "0.383.0",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "recharts": "^2.12.7",
+    "xlsx": "0.18.5"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.1",
+    "autoprefixer": "^10.4.19",
+    "postcss": "^8.4.38",
+    "tailwindcss": "^3.4.4",
+    "vite": "^5.3.1",
+    "vite-plugin-pwa": "^0.20.0",
+    "vite-plugin-singlefile": "^2.0.2"
+  }
+}

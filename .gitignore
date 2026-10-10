@@ -1,0 +1,18 @@
+# dependências
+node_modules/
+
+# builds (a Vercel gera os seus a partir do código)
+dist/
+dist-single/
+
+# ambiente e segredos — nunca subir para o GitHub
+.env
+.env.*
+!.env.example
+
+# sistema / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.log
