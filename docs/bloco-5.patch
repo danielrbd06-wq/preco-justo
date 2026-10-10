@@ -349,7 +349,7 @@
  const CHAVE_TEMA = "preco-justo:tema";
  
  /* Rede de segurança: se qualquer aba travar por um motivo que eu não       */
-@@ -1714,6 +1842,75 @@
+@@ -1714,6 +1842,78 @@
    );
  }
  
@@ -386,12 +386,15 @@
 +              : entrada(f, "taxaPct", "taxa cobrada")}
 +          </React.Fragment>
 +        ))}
-+        <span className="text-xs font-semibold pt-1" style={{ color: t.text, borderTop: `1px solid ${t.border}` }}>Total</span>
-+        <span className="text-xs font-semibold font-num pt-1 text-right pr-4"
-+          style={{ color: calc && !calc.completo ? t.warningText : t.text, borderTop: `1px solid ${t.border}` }}>
++        {/* Uma linha só, de ponta a ponta: com a borda em cada célula, o espaço entre */}
++        {/* as colunas partia o traço em três pedaços.                                */}
++        <div className="col-span-3 mt-0.5" style={{ height: 1, background: t.border }} />
++        <span className="text-xs font-semibold" style={{ color: t.text }}>Total</span>
++        <span className="text-xs font-semibold font-num text-right pr-4"
++          style={{ color: calc && !calc.completo ? t.warningText : t.text }}>
 +          {fmtPct(calc ? calc.soma : 0, 0)}
 +        </span>
-+        <span className="pt-1 self-stretch" style={{ borderTop: `1px solid ${t.border}` }} />
++        <span />
 +      </div>
 +
 +      {calc && !calc.completo && (
@@ -425,7 +428,7 @@
  /* ======================================================================= */
  /* Aba: Negócio                                                            */
  /* ======================================================================= */
-@@ -1963,6 +2160,10 @@
+@@ -1963,6 +2163,10 @@
    const updateProfissional = (id, field, value) =>
      setN({ ...n, profissionais: (n.profissionais || []).map((p) => (p.id === id ? { ...p, [field]: value } : p)) });
  
@@ -436,7 +439,7 @@
    const cardStyle = { background: t.surface, border: `1px solid ${t.border}`, boxShadow: t.shadow };
  
    // Onboarding aparece só até existir um segmento salvo — depois disso vira um card
-@@ -2172,6 +2373,18 @@
+@@ -2172,6 +2376,18 @@
            )}
          </SecaoColapsavel>
  
@@ -455,7 +458,7 @@
          <SecaoColapsavel resumo={`${(n.insumosCompartilhados || []).length} cadastrado(s)`} titulo="Insumos compartilhados entre serviços" icon={Sparkles}>
            <p className="text-[11px] mb-2" style={{ color: t.textMuted }}>
              Coisas como shampoo, touca ou luva costumam ser usadas em vários serviços. Cadastre aqui uma vez só — depois,
-@@ -2377,6 +2590,9 @@
+@@ -2377,6 +2593,9 @@
              {nd.comissaoEquipe && (
                <ResumoItem label="Comissão média da equipe" valor={fmtPct(nd.comissaoEquipe.pct)} />
              )}
@@ -465,7 +468,7 @@
            </div>
            {nd.receitaAluguelCadeiras > 0 && (
              <p className="text-[11px] mt-3" style={{ color: "rgba(255,255,255,.85)" }}>
-@@ -2931,7 +3147,7 @@
+@@ -2931,7 +3150,7 @@
    const somaPrecos = itensSelecionados.reduce((s, it) => s + it.calc.preco, 0);
    if (somaPrecos <= 0) return { status: "sem-dado" };
    const comissaoPctPonderada = itensSelecionados.reduce((s, it) => s + comissaoEfetiva(it, nd) * it.calc.preco, 0) / somaPrecos;
@@ -474,7 +477,7 @@
  
    const margensEfetivas = itensSelecionados.map((it) => ({
      nome: it.nome,
-@@ -3431,6 +3647,8 @@
+@@ -3431,6 +3650,8 @@
      comissaoPct: "0", taxaCartaoPct: "0", margemPct: "20", atendimentosMes: "", horasAtendimento: "1", precoCobrado: "",
      // Serviço novo usa a comissão média da equipe quando ela existe (Bloco 4).
      comissaoModo: nd?.comissaoEquipe ? "equipe" : "propria",
@@ -483,7 +486,7 @@
    };
  
    const [modo, setModo] = useState("descobrir"); // 'descobrir' | 'ja-tenho'
-@@ -3443,6 +3661,7 @@
+@@ -3443,6 +3664,7 @@
    const [comissaoPct, setComissaoPct] = useState(vazio.comissaoPct);
    const [comissaoModo, setComissaoModo] = useState(vazio.comissaoModo);
    const [taxaCartaoPct, setTaxaCartaoPct] = useState(vazio.taxaCartaoPct);
@@ -491,7 +494,7 @@
    const [margemPct, setMargemPct] = useState(vazio.margemPct);
    const [atendimentosMes, setAtendimentosMes] = useState(vazio.atendimentosMes);
    const [horasAtendimento, setHorasAtendimento] = useState(vazio.horasAtendimento);
-@@ -3456,14 +3675,15 @@
+@@ -3456,14 +3678,15 @@
  
    // "sujo" = tem algo digitado que ainda não foi salvo neste serviço.
    const rascunhoAtual = useMemo(() => ({
@@ -510,7 +513,7 @@
          atendimentosMes: String(servicoEmEdicao.atendimentosMes), horasAtendimento: String(servicoEmEdicao.horasPorAtendimento),
          modo: servicoEmEdicao.modo === "ja-tenho" ? "ja-tenho" : "descobrir",
          precoCobrado: servicoEmEdicao.precoCobrado !== undefined && servicoEmEdicao.precoCobrado !== null ? String(servicoEmEdicao.precoCobrado) : "",
-@@ -3494,6 +3714,7 @@
+@@ -3494,6 +3717,7 @@
        setComissaoPct(String(servicoEmEdicao.comissaoPct));
        setComissaoModo(servicoEmEdicao.comissaoModo || "propria");
        setTaxaCartaoPct(String(servicoEmEdicao.taxaCartaoPct));
@@ -518,7 +521,7 @@
        setMargemPct(String(servicoEmEdicao.margemPct));
        setAtendimentosMes(String(servicoEmEdicao.atendimentosMes));
        setHorasAtendimento(String(servicoEmEdicao.horasPorAtendimento));
-@@ -3512,7 +3733,7 @@
+@@ -3512,7 +3736,7 @@
      setModo("descobrir");
      setPassoWizard(1);
      setCustosVariaveis(vazio.custosVariaveis.map((i) => ({ ...i, id: uid() })));
@@ -527,7 +530,7 @@
      setAtendimentosMes(vazio.atendimentosMes); setHorasAtendimento(vazio.horasAtendimento);
      setNomeServico(vazio.nome); setCategoria(vazio.categoria); setTipo(vazio.tipo); setConfirmandoExclusaoForm(false);
      setPrecoCobrado(vazio.precoCobrado); setPrecoCobradoDebounced(vazio.precoCobrado);
-@@ -3570,23 +3791,25 @@
+@@ -3570,23 +3794,25 @@
  
    const resultadoA = useMemo(
      () => calcularServico({
@@ -557,7 +560,7 @@
  
    // "Preço salvo" recalculado ao vivo com os parâmetros ORIGINAIS (sem as edições em
    // andamento), no MODO em que o serviço foi salvo, contra a config. atual do negócio.
-@@ -3604,7 +3827,7 @@
+@@ -3604,7 +3830,7 @@
      criadoEm: (!idNovo && servicoEmEdicao) ? servicoEmEdicao.criadoEm : Date.now(),
      editadoEm: Date.now(),
      modo,
@@ -566,7 +569,7 @@
      horasPorAtendimento: N(horasAtendimento), atendimentosMes: N(atendimentosMes),
      precoCobrado: modo === "ja-tenho" ? N(precoCobradoDebounced) : null,
      precoConfirmado: resultadoAtivo.status === "ok" ? resultadoAtivo.preco : null,
-@@ -3754,13 +3977,8 @@
+@@ -3754,13 +3980,8 @@
  
              <BlocoComissaoETaxa nd={nd} comissaoPct={comissaoPct} setComissaoPct={setComissaoPct}
                comissaoModo={comissaoModo} setComissaoModo={setComissaoModo}
@@ -582,7 +585,7 @@
              <CampoPct label="Margem de lucro desejada (meta)" value={margemPct} onChange={setMargemPct}
                ajuda="Quanto você quer que sobre de lucro de verdade, depois de pagar tudo — não é o preço final, é a fatia que fica com você." faq="margem-contribuicao" />
  
-@@ -3856,7 +4074,7 @@
+@@ -3856,7 +4077,7 @@
                  )}
                  {resultadoB.status === "ok" && (
                    <SimuladorSensibilidade
@@ -591,7 +594,7 @@
                      horasPorAtendimento={horasAtendimento} atendimentosMes={N(atendimentosMes)} nd={nd}
                    />
                  )}
-@@ -3993,13 +4211,8 @@
+@@ -3993,13 +4214,8 @@
              <div className="space-y-4 fade-up">
                <BlocoComissaoETaxa nd={nd} comissaoPct={comissaoPct} setComissaoPct={setComissaoPct}
                  comissaoModo={comissaoModo} setComissaoModo={setComissaoModo}
@@ -607,7 +610,7 @@
                {modo === "descobrir" ? (
                  <CampoPct label="Margem de lucro desejada (meta)" value={margemPct} onChange={setMargemPct}
                    ajuda="Quanto você quer que sobre de lucro de verdade, depois de pagar tudo — não é o preço final, é a fatia que fica com você." faq="margem-contribuicao" />
-@@ -4056,7 +4269,7 @@
+@@ -4056,7 +4272,7 @@
                    )}
                    {resultadoB.status === "ok" && (
                      <SimuladorSensibilidade
@@ -616,7 +619,7 @@
                        horasPorAtendimento={horasAtendimento} atendimentosMes={N(atendimentosMes)} nd={nd}
                      />
                    )}
-@@ -4397,9 +4610,9 @@
+@@ -4397,9 +4613,9 @@
          "Margem desejada (%)", "Horas/atend.", "Atendimentos/mês", "Margem contrib. unit. (R$)", "Lucro projetado/mês (R$)", "Status"],
        ...servicosCalc.map((s) => (
          s.calc.status === "ok"
@@ -628,7 +631,7 @@
               s.atendimentosMes, null, null, "inválido com a config. atual — revisar na Calculadora"]
        )),
      ]);
-@@ -5123,7 +5336,7 @@
+@@ -5123,7 +5339,7 @@
        const calc = calcularParaExibicao(s, nd);
        somaMateriais += qtd * calc.totalVariaveis;
        const receitaEstimada = qtd * calc.preco;
@@ -637,7 +640,7 @@
      });
      custosVariaveisReais = somaMateriais + somaComissaoTaxa;
    }
-@@ -5207,7 +5420,7 @@
+@@ -5207,7 +5423,7 @@
        const receita = quantidade * valorUnitarioUsado;
        const custoMaterial = quantidade * calc.totalVariaveis;
        const custoComissao = receita * (comissaoEfetiva(s, nd) / 100);
@@ -646,7 +649,7 @@
        return { servicoId: s.id, nome: s.nome, quantidade, receita, valorUnitarioUsado, estimado: valorUnitarioReal == null, custoMaterial, custoComissao, custoTaxaCartao };
      }).filter(Boolean);
    }, [mostrarPorServico, detalhe, servicosValidos, nd]);
-@@ -5601,7 +5814,7 @@
+@@ -5601,7 +5817,7 @@
      const receita = d.valorReal != null ? d.valorReal : d.quantidade * calc.preco;
      const custoMaterial = d.quantidade * calc.totalVariaveis;
      const custoComissao = receita * (comissaoEfetiva(servico, nd) / 100);
@@ -655,7 +658,7 @@
      const custoImposto = receita * (nd.impostoPct / 100);
      resultado[id] = {
        nome: servico.nome, categoria: servico.categoria || "Outros", tipo: servico.tipo || "servico", quantidade: d.quantidade,
-@@ -6308,6 +6521,16 @@
+@@ -6308,6 +6524,16 @@
          ],
        },
        {
