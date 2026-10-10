@@ -61,7 +61,7 @@ Antes de finalizar, revise a interface como **designer de produto sênior** e co
 
 ## 5. Estado atual e próximos passos
 
-As melhorias foram organizadas em **6 blocos**, um PR por bloco, por ordem de risco e dependência (detalhes em `docs/analise-critica.md`).
+As melhorias foram organizadas em **7 blocos**, um PR por bloco, por ordem de risco e dependência (detalhes em `docs/analise-critica.md`).
 
 | Bloco | Conteúdo | Status |
 |---|---|---|
@@ -71,7 +71,16 @@ As melhorias foram organizadas em **6 blocos**, um PR por bloco, por ordem de ri
 | 4 | Comissão por profissional (opcional); modo "aluguel de cadeira" | Pendente |
 | 5 | Calculadora guiada de taxa de cartão ponderada | Pendente |
 | 6 | Benchmarking regional agregado e mapa (Leaflet + OpenStreetMap) | Pendente |
-| 7 | Polimento visual (decidido com o Daniel): `text-wrap: pretty` nos textos explicativos; largura máxima de linha de ~65 caracteres no computador; espaçamentos padronizados entre títulos, textos de apoio e campos; selos com texto longo (ex.: SINDECOBE) viram nota de rodapé. **Alinhamento sempre à esquerda — não justificar** (rios brancos no celular, sem hifenização em português, WCAG 1.4.8) | Pendente — fazer depois do Bloco 3 |
+| 7 | Polimento visual (decidido com o Daniel): quebra de linha equilibrada (`text-wrap`), largura máxima de linha, rótulos sem vão ao quebrar, seções do Negócio sem linhas divisórias redundantes, títulos de seção sem corte, selos longos como nota de rodapé | ✅ Implementado (`docs/bloco-7-issue-e-pr.md`) |
+
+### Regras de tipografia e espaçamento (Bloco 7)
+- **Alinhamento sempre à esquerda. Não justificar texto:** em colunas estreitas e sem hifenização em português, o justificado abre "rios" de espaço entre as palavras e piora a leitura (WCAG 1.4.8). Decisão tomada com o Daniel.
+- Parágrafos, itens de lista e rótulos usam `text-wrap: pretty` (sem palavra sozinha na última linha); títulos, `text-wrap: balance`.
+- Parágrafos dentro do conteúdo têm largura máxima de **75 caracteres** (`main p { max-width: 75ch }`). Blocos com `text-center` continuam centralizados.
+- Rótulo de campo é **bloco** (`block leading-snug`): em linha, ele herda a altura de linha do texto base e abre um vão ao quebrar.
+- Cartões irmãos ficam a **12 px** (`space-y-3`), no Negócio e no Painel. Cartões com borda não levam linha divisória entre si.
+- Título de seção pode quebrar linha; quem encurta (`truncate`) é o resumo ao lado.
+- `Selo` com mais de 45 caracteres vira automaticamente nota de rodapé (mesma cor e ícone, sem fundo). Pílula só para rótulos curtos.
 
 ### Componentes de explicação (reutilize, não recrie)
 - **`Ajuda`** — o "?" ao lado de um campo. Aceita `texto` (dica curta) e `faq` (id de uma pergunta de `FAQ_DADOS`, que adiciona o link "Entender melhor"). O balão é renderizado num portal com posição fixa, para não ser cortado por seções com `overflow: hidden` nem sair da tela no celular. `Campo`, `CampoPct` e `SecaoColapsavel` repassam `ajuda` e `faq`.
