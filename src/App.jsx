@@ -381,6 +381,46 @@ function gerarDadosExemplo() {
   return { negocio, servicos };
 }
 
+/* Vínculo de cada profissional cadastrado (Bloco 4). Cadastros antigos não  */
+/* têm o campo: são tratados como comissionados, mas só entram na média de   */
+/* comissão quando a comissão for informada.                                 */
+const VINCULOS_PROFISSIONAL = [
+  { id: "comissao", label: "Comissionado(a)" },
+  { id: "dono", label: "Dono(a) / sem comissão" },
+  { id: "aluguel", label: "Aluga cadeira" },
+];
+const vinculoDe = (p) => p?.vinculo || "comissao";
+
+/* Comissão média da equipe, ponderada pelos atendimentos de cada pessoa que */
+/* atende pelo salão (comissionados e dono). Quem aluga cadeira fica de fora: */
+/* o serviço dele não é receita do salão. Se faltar o número de atendimentos */
+/* de alguém, usa média simples e avisa (ponderada: false).                  */
+function calcularComissaoEquipe(profissionais) {
+  const participantes = (profissionais || [])
+    .filter((p) => p.ativo !== false && (p.nome || "").trim())
+    .filter((p) => (vinculoDe(p) === "comissao" && String(p.comissaoPct ?? "").trim() !== "") || vinculoDe(p) === "dono")
+    .map((p) => ({
+      id: p.id, nome: p.nome.trim(), vinculo: vinculoDe(p),
+      pct: vinculoDe(p) === "dono" ? 0 : Math.min(99, Math.max(0, N(p.comissaoPct))),
+      atendimentos: Math.max(0, N(p.atendimentosMes)),
+    }));
+  const temComissionado = participantes.some((p) => p.vinculo === "comissao");
+  if (participantes.length < 2 || !temComissionado) return null;
+  const ponderada = participantes.every((p) => p.atendimentos > 0);
+  const somaPesos = ponderada ? participantes.reduce((s, p) => s + p.atendimentos, 0) : participantes.length;
+  const pct = participantes.reduce((s, p) => s + p.pct * (ponderada ? p.atendimentos : 1), 0) / somaPesos;
+  return { pct, ponderada, participantes };
+}
+
+/* Comissão que de fato entra no preço de um serviço: a média da equipe, se  */
+/* o serviço foi marcado para usá-la e ela existe; senão, a do próprio       */
+/* serviço. Serviços salvos antes do Bloco 4 não têm comissaoModo e mantêm   */
+/* a comissão que já tinham.                                                 */
+function comissaoEfetiva(servico, nd) {
+  if (servico?.comissaoModo === "equipe" && nd?.comissaoEquipe) return nd.comissaoEquipe.pct;
+  return N(servico?.comissaoPct);
+}
+
 function computeNegocioDerivado(n) {
   const custosFixosSoma = n.custosFixos.reduce((s, i) => s + N(i.valor), 0);
   const proLabore = N(n.proLabore);
@@ -388,7 +428,15 @@ function computeNegocioDerivado(n) {
   const custoFixoTotal = custosFixosSoma + proLabore + meiDas;
   const custoFixoNaoCaixa = n.custosFixos.filter((i) => i.semCaixa).reduce((s, i) => s + N(i.valor), 0);
   const horasTotais = N(n.diasMes) * N(n.horasDia) * Math.max(1, N(n.numeroProfissionais) || 1);
-  const custoFixoPorHora = horasTotais > 0 ? custoFixoTotal / horasTotais : 0;
+  // Aluguel de cadeiras recebido (lado do dono): é receita do salão, não custo
+  // negativo — aparece em linha própria no DRE. Para o preço, reduz o custo
+  // fixo que os serviços do próprio salão precisam cobrir.
+  const receitaAluguelCadeiras = (n.profissionais || [])
+    .filter((p) => p.ativo !== false && vinculoDe(p) === "aluguel")
+    .reduce((s, p) => s + N(p.aluguelMes), 0);
+  const custoFixoLiquido = Math.max(0, custoFixoTotal - receitaAluguelCadeiras);
+  const custoFixoPorHora = horasTotais > 0 ? custoFixoLiquido / horasTotais : 0;
+  const comissaoEquipe = calcularComissaoEquipe(n.profissionais);
 
   let impostoPct = 0, fatorR = null, anexoUsado = null, aliqInfo = null;
   if (n.regime === "simples") {
@@ -403,6 +451,7 @@ function computeNegocioDerivado(n) {
 
   return {
     custosFixosSoma, proLabore, meiDas, custoFixoTotal, custoFixoNaoCaixa,
+    receitaAluguelCadeiras, custoFixoLiquido, comissaoEquipe,
     horasTotais, custoFixoPorHora, impostoPct, fatorR, anexoUsado, aliqInfo,
     numeroProfissionais: Math.max(1, N(n.numeroProfissionais) || 1),
     diasMes: N(n.diasMes),
@@ -486,8 +535,9 @@ function somaCustosVariaveis(custosVariaveis, contexto) {
 /* Motor de cálculo por serviço (fórmula original intacta — só a origem    */
 /* de "totalVariaveis" ficou inteligente)                                  */
 /* ======================================================================= */
-function calcularServico({ custosVariaveis, comissaoPct, taxaCartaoPct, margemPct, horasPorAtendimento, atendimentosMes }, nd) {
+function calcularServico({ custosVariaveis, comissaoPct: comissaoInformada, comissaoModo, taxaCartaoPct, margemPct, horasPorAtendimento, atendimentosMes }, nd) {
   if (!nd || !nd.horasTotais) return { status: "sem-negocio" };
+  const comissaoPct = comissaoEfetiva({ comissaoPct: comissaoInformada, comissaoModo }, nd);
   const totalVariaveis = somaCustosVariaveis(custosVariaveis, { atendimentosMes, diasMesNegocio: nd.diasMes, insumosCompartilhados: nd.insumosCompartilhados });
   const imposto = nd.impostoPct;
   const soma = N(comissaoPct) + N(taxaCartaoPct) + imposto + N(margemPct);
@@ -506,10 +556,10 @@ function calcularServico({ custosVariaveis, comissaoPct, taxaCartaoPct, margemPc
   const valorMargem = preco * (N(margemPct) / 100);
   const margemContribuicaoUnitaria = preco - valorImposto - totalVariaveis - valorComissao - valorTaxaCartao;
   const lucroProjetadoMes = valorMargem * atendimentosMes;
-  const pontoEquilibrioServico = margemContribuicaoUnitaria > 0 ? nd.custoFixoTotal / margemContribuicaoUnitaria : Infinity;
+  const pontoEquilibrioServico = margemContribuicaoUnitaria > 0 ? nd.custoFixoLiquido / margemContribuicaoUnitaria : Infinity;
 
   return {
-    status: "ok", totalVariaveis, custoFixoRateado, preco,
+    status: "ok", totalVariaveis, custoFixoRateado, preco, comissaoPct,
     valorComissao, valorTaxaCartao, valorImposto, valorMargem,
     margemContribuicaoUnitaria, lucroProjetadoMes, pontoEquilibrioServico,
   };
@@ -536,8 +586,9 @@ function pontoEquilibrioSemanal(mensal, _diasMesNegocioNaoUsado) {
 /* achar o preço a partir da margem, acha a margem a partir do preço.      */
 /* Verificado numericamente que os dois modos batem exatamente (ver PR).   */
 /* ======================================================================= */
-function calcularReverso({ custosVariaveis, comissaoPct, taxaCartaoPct, precoCobrado, horasPorAtendimento, atendimentosMes, margemMetaPct }, nd) {
+function calcularReverso({ custosVariaveis, comissaoPct: comissaoInformada, comissaoModo, taxaCartaoPct, precoCobrado, horasPorAtendimento, atendimentosMes, margemMetaPct }, nd) {
   if (!nd || !nd.horasTotais) return { status: "sem-negocio" };
+  const comissaoPct = comissaoEfetiva({ comissaoPct: comissaoInformada, comissaoModo }, nd);
   const preco = N(precoCobrado);
   if (preco <= 0) return { status: "sem-preco" };
 
@@ -560,7 +611,7 @@ function calcularReverso({ custosVariaveis, comissaoPct, taxaCartaoPct, precoCob
   // margem de contribuição no mesmo sentido do Modo A (não desconta o rateio do fixo) —
   // é o que alimenta o ponto de equilíbrio deste serviço específico.
   const margemContribuicaoUnitaria = preco - totalVariaveis - valorComissao - valorTaxaCartao - valorImposto;
-  const pontoEquilibrioServico = margemContribuicaoUnitaria > 0 ? nd.custoFixoTotal / margemContribuicaoUnitaria : Infinity;
+  const pontoEquilibrioServico = margemContribuicaoUnitaria > 0 ? nd.custoFixoLiquido / margemContribuicaoUnitaria : Infinity;
 
   const somaSemMargem = N(comissaoPct) + N(taxaCartaoPct) + imposto;
   const custoBase = custoFixoRateado + totalVariaveis;
@@ -574,11 +625,90 @@ function calcularReverso({ custosVariaveis, comissaoPct, taxaCartaoPct, precoCob
   if (lucroLiquido >= 0) diagnostico = margemLiquidaPct >= N(margemMetaPct) ? "saudavel" : "apertado";
 
   return {
-    status: "ok", diagnostico,
+    status: "ok", diagnostico, comissaoPct,
     preco, totalVariaveis, custoFixoRateado, valorComissao, valorTaxaCartao, valorImposto,
     custoTotal, lucroBruto, lucroLiquido, margemLiquidaPct, markup, lucroPorHora,
     margemContribuicaoUnitaria, pontoEquilibrioServico, precoMinimo, precoIdeal, lucroProjetadoMes,
   };
+}
+
+/* Comissão + taxa de cartão do serviço (Bloco 4). Com a comissão média da   */
+/* equipe disponível, o usuário escolhe entre ela e uma comissão própria do  */
+/* serviço, e vê de onde a média saiu. Usado nos dois modos da Calculadora.  */
+function BlocoComissaoETaxa({ nd, comissaoPct, setComissaoPct, comissaoModo, setComissaoModo, taxaCartaoPct, setTaxaCartaoPct }) {
+  const t = useT();
+  const equipe = nd?.comissaoEquipe;
+  const locatario = nd?.perfil?.modeloOperacao === "locatario";
+  const campoTaxa = (
+    <CampoPct label="Taxa de cartão/Pix" value={taxaCartaoPct} onChange={setTaxaCartaoPct}
+      ajuda="A taxa que a maquininha ou o banco cobra em cima da venda. Confira no seu extrato — deixar em 0 faz o preço vir mais barato do que deveria." faq="markup-divisor" />
+  );
+  const campoPropria = locatario ? (
+    <CampoPct label="% que fica com o salão" value={comissaoPct} onChange={setComissaoPct}
+      ajuda="Se o dono do salão fica com uma porcentagem de cada serviço seu, informe aqui. Se você paga um aluguel fixo por mês, deixe 0: o aluguel entra nas Contas Fixas." />
+  ) : (
+    <CampoPct label="Comissão do profissional" value={comissaoPct} onChange={setComissaoPct}
+      ajuda="Quanto do preço desse serviço vai pro profissional que atende, em %. Se você é sozinho(a), geralmente é 0 — o que sobra é seu pró-labore." faq="comissao-parceiros" />
+  );
+
+  if (!equipe) {
+    return (
+      <div className="space-y-2">
+        {comissaoModo === "equipe" && (
+          <p className="text-[11px] flex items-start gap-1" style={{ color: t.warningText }}>
+            <AlertTriangle size={12} className="mt-0.5 shrink-0" />
+            Este serviço usava a comissão média da equipe, mas ela não está mais disponível (precisa de duas ou mais
+            pessoas atendendo no cadastro de Profissionais). Usando a comissão abaixo.
+          </p>
+        )}
+        <div className="grid grid-cols-2 gap-2">{campoPropria}{campoTaxa}</div>
+      </div>
+    );
+  }
+
+  const usandoEquipe = comissaoModo === "equipe";
+  const opcoes = [
+    { id: "equipe", label: `Média da equipe · ${fmtPct(equipe.pct)}` },
+    { id: "propria", label: "Própria deste serviço" },
+  ];
+  return (
+    <div className="space-y-3">
+      <div>
+        <span className="block text-xs font-medium leading-snug" style={{ color: t.textMuted }}>
+          Comissão do profissional
+          <Ajuda faq="comissao-parceiros" texto="Use a média da equipe quando qualquer pessoa pode fazer este serviço: o preço fica um só, e a comissão média é ponderada pelos atendimentos de cada uma. Escolha uma comissão própria se este serviço tem regra diferente." />
+        </span>
+        <div className="flex gap-1 p-1 rounded-lg mt-1" role="radiogroup" aria-label="Origem da comissão" style={{ background: t.surfaceAlt }}>
+          {opcoes.map((o) => (
+            <button key={o.id} type="button" role="radio" aria-checked={comissaoModo === o.id} onClick={() => setComissaoModo(o.id)}
+              className="btn-press flex-1 rounded-md px-2 py-1.5 text-xs font-medium"
+              style={{ background: comissaoModo === o.id ? t.surface : "transparent", color: comissaoModo === o.id ? t.text : t.textMuted, boxShadow: comissaoModo === o.id ? t.shadow : "none" }}>
+              {o.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      {usandoEquipe ? (
+        <div className="pop-in rounded-xl p-3 text-xs" style={{ background: t.primarySoft }}>
+          <p style={{ color: t.text }}>
+            {equipe.ponderada ? "Média ponderada pelos atendimentos de cada pessoa:" : "Média simples (falta o número de atendimentos de alguém no cadastro):"}
+          </p>
+          <ul className="mt-1.5 space-y-0.5">
+            {equipe.participantes.map((pp) => (
+              <li key={pp.id} className="flex justify-between gap-3" style={{ color: t.textMuted }}>
+                <span className="min-w-0 truncate">{pp.nome}{pp.vinculo === "dono" ? " (dono/a)" : ""}</span>
+                <span className="font-num shrink-0">{fmtPct(pp.pct)}{equipe.ponderada ? ` · ${pp.atendimentos} atend.` : ""}</span>
+              </li>
+            ))}
+          </ul>
+          <p className="mt-1.5 font-semibold" style={{ color: t.primaryText }}>Comissão usada no preço: {fmtPct(equipe.pct)}</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 gap-2">{campoPropria}</div>
+      )}
+      <div className="grid grid-cols-2 gap-2">{campoTaxa}</div>
+    </div>
+  );
 }
 
 /* Visão unificada de um serviço salvo, independente do modo em que foi   */
@@ -614,8 +744,9 @@ function montarDREMensal(fechamento) {
   const custosVariaveisTotais = N(fechamento.custosVariaveisReaisInformados);
   const margemContribuicaoTotal = receitaLiquida - custosVariaveisTotais;
   const custosFixos = N(fechamento.custosFixosSnapshot);
-  const resultadoOperacional = margemContribuicaoTotal - custosFixos;
-  return { receitaBruta, impostos, receitaLiquida, custosVariaveisTotais, margemContribuicaoTotal, custosFixos, resultadoOperacional };
+  const aluguelRecebido = N(fechamento.aluguelRecebidoSnapshot);
+  const resultadoOperacional = margemContribuicaoTotal - custosFixos + aluguelRecebido;
+  return { receitaBruta, impostos, receitaLiquida, custosVariaveisTotais, margemContribuicaoTotal, custosFixos, aluguelRecebido, resultadoOperacional };
 }
 
 function montarDRE(servicosCalc, nd) {
@@ -628,11 +759,16 @@ function montarDRE(servicosCalc, nd) {
   );
   const margemContribuicaoTotal = receitaLiquida - custosVariaveisTotais;
   const custosFixos = nd.custoFixoTotal;
-  const resultadoOperacional = margemContribuicaoTotal - custosFixos;
+  // Aluguel de cadeiras recebido: outra receita operacional, em linha própria.
+  // custosFixosLiquidos é o que a margem dos serviços precisa cobrir — base
+  // dos pontos de equilíbrio.
+  const aluguelRecebido = N(nd.receitaAluguelCadeiras);
+  const custosFixosLiquidos = Math.max(0, custosFixos - aluguelRecebido);
+  const resultadoOperacional = margemContribuicaoTotal - custosFixos + aluguelRecebido;
   const rcm = receitaBruta > 0 ? margemContribuicaoTotal / receitaBruta : 0;
   return {
     receitaBruta, impostos, receitaLiquida, custosVariaveisTotais, margemContribuicaoTotal,
-    custosFixos, resultadoOperacional, rcm, qtdInvalidos: servicosCalc.length - validos.length,
+    custosFixos, aluguelRecebido, custosFixosLiquidos, resultadoOperacional, rcm, qtdInvalidos: servicosCalc.length - validos.length,
   };
 }
 
@@ -769,7 +905,7 @@ function useToast() {
 /* ======================================================================= */
 /* App                                                                      */
 /* ======================================================================= */
-const VERSAO_APP = "v7.11";
+const VERSAO_APP = "v7.12";
 const CHAVE_TEMA = "preco-justo:tema";
 
 /* Rede de segurança: se qualquer aba travar por um motivo que eu não       */
@@ -1526,6 +1662,58 @@ function DiagnosticoSimples({ n, nd }) {
   );
 }
 
+/* Uma pessoa no cadastro de Profissionais (Bloco 4). O vínculo decide o que */
+/* ela informa: comissionado(a) → comissão e atendimentos; dono(a) → só os   */
+/* atendimentos (pesa na média com 0%); aluga cadeira → valor do aluguel.     */
+function LinhaProfissional({ p, onChange, onRemove }) {
+  const t = useT();
+  const vinculo = vinculoDe(p);
+  const campoStyle = { background: t.surface, border: `1px solid ${t.border}`, color: t.text };
+  return (
+    <div className="rounded-xl p-2.5 space-y-2 fade-up" style={{ background: t.surfaceAlt }}>
+      <div className="flex gap-2 items-center">
+        <input className={CAMPO + " min-w-0"} style={campoStyle} placeholder="Nome do profissional" value={p.nome}
+          onChange={(e) => onChange("nome", e.target.value)} aria-label="Nome do profissional" />
+        <label className="flex items-center gap-1.5 text-[11px] shrink-0" style={{ color: t.textMuted }}>
+          <input type="checkbox" checked={p.ativo !== false} onChange={(e) => onChange("ativo", e.target.checked)} />
+          ativo
+        </label>
+        <button onClick={onRemove} className="btn-press touch-target shrink-0" style={{ color: t.danger }} aria-label={`Remover ${p.nome || "profissional"}`}>
+          <Trash2 size={16} />
+        </button>
+      </div>
+      {/* "Como trabalha" em linha própria: dividindo a linha, o texto da opção era */}
+      {/* cortado no celular ("Comissior", "Aluga cac").                          */}
+      <Campo label="Como trabalha">
+        <select className={CAMPO} style={campoStyle} value={vinculo} onChange={(e) => onChange("vinculo", e.target.value)}>
+          {VINCULOS_PROFISSIONAL.map((v) => <option key={v.id} value={v.id}>{v.label}</option>)}
+        </select>
+      </Campo>
+      <div className="grid grid-cols-2 gap-2">
+        {vinculo === "comissao" && (
+          <CampoPct label="Comissão" value={p.comissaoPct ?? ""} onChange={(v) => onChange("comissaoPct", v)}
+            ajuda="O percentual do preço de cada serviço que vai para essa pessoa." faq="comissao-parceiros" />
+        )}
+        {vinculo === "aluguel" ? (
+          <Campo label="Aluguel por mês" ajuda="Quanto essa pessoa paga por mês para usar a cadeira. Entra como receita do salão e reduz o custo fixo que os seus serviços precisam cobrir.">
+            <CampoMoeda value={p.aluguelMes} onChange={(v) => onChange("aluguelMes", v)} />
+          </Campo>
+        ) : (
+          <Campo label="Atendimentos/mês" ajuda="Mais ou menos quantos atendimentos essa pessoa faz por mês. Serve de peso na comissão média: quem atende mais pesa mais.">
+            <CampoNumero value={p.atendimentosMes ?? ""} placeholder="aprox." onChange={(v) => onChange("atendimentosMes", v)} />
+          </Campo>
+        )}
+      </div>
+      {vinculo === "aluguel" && (
+        <p className="text-[11px]" style={{ color: t.textMuted }}>
+          Quem aluga cadeira fica com o valor dos próprios serviços: não entra na comissão média nem deve ser contado no
+          número de profissionais da Capacidade produtiva.
+        </p>
+      )}
+    </div>
+  );
+}
+
 /* ======================================================================= */
 /* Aba: Negócio                                                            */
 /* ======================================================================= */
@@ -1904,6 +2092,16 @@ function Negocio({ negocio, onSalvar, servicos, onCarregarExemplo }) {
             Comecei com as categorias mais comuns do setor, valores em branco — apague o que não se aplica a você e
             some o que estiver faltando.
           </p>
+          {n.perfil?.modeloOperacao === "locatario" && (
+            <div className="flex gap-2 items-start rounded-xl p-3 mb-2 text-xs" style={{ background: t.primarySoft, color: t.text }}>
+              <Info size={14} className="mt-0.5 shrink-0" style={{ color: t.primaryText }} />
+              <p>
+                <strong>Você aluga cadeira ou sala.</strong> Se paga um valor fixo por mês, lance em "Aluguel do espaço":
+                ele é um custo fixo seu. Se o dono do salão fica com uma porcentagem de cada serviço, deixe o aluguel em
+                branco e informe essa porcentagem na Calculadora, no campo "% que fica com o salão".
+              </p>
+            </div>
+          )}
           <div className="space-y-2">
             {n.custosFixos.map((item) => (
               <div key={item.id} className="flex flex-col gap-1.5 rounded-xl p-2" style={{ background: t.surfaceAlt }}>
@@ -1931,26 +2129,19 @@ function Negocio({ negocio, onSalvar, servicos, onCarregarExemplo }) {
           </button>
         </SecaoColapsavel>
 
-        <SecaoColapsavel resumo={`${(n.profissionais || []).filter((p) => p.ativo !== false).length} ativo(s)`} titulo="Profissionais" icon={Building2}
-          ajuda={`Cadastre quem atende n${termoEstabelecimento(n.perfil?.segmento).artigo} ${termoEstabelecimento(n.perfil?.segmento).termo} pra poder dividir o faturamento por pessoa no Fechamento Mensal. Não muda o rateio de custo fixo — isso continua vindo do campo 'número de profissionais' mais abaixo.`}>
+        <SecaoColapsavel
+          resumo={`${(n.profissionais || []).filter((p) => p.ativo !== false).length} ativo(s)${nd.comissaoEquipe ? ` · comissão média ${fmtPct(nd.comissaoEquipe.pct)}` : ""}`}
+          titulo="Profissionais" icon={Building2} faq="comissao-parceiros"
+          ajuda={`Cadastre quem atende n${termoEstabelecimento(n.perfil?.segmento).artigo} ${termoEstabelecimento(n.perfil?.segmento).termo}. Serve para dividir o faturamento por pessoa no Fechamento Mensal, calcular a comissão média da equipe e lançar o aluguel de quem aluga cadeira.`}>
           <p className="text-[11px] mb-2" style={{ color: t.textMuted }}>
-            Opcional — só serve pra registrar, mês a mês, quanto cada um faturou. Desmarcar "ativo" tira a pessoa da
-            lista do Fechamento Mensal sem apagar o histórico de meses anteriores.
+            Opcional. Com duas ou mais pessoas atendendo, a Calculadora pode usar a comissão média da equipe. Desmarcar
+            "ativo" tira a pessoa das contas e do Fechamento Mensal sem apagar o histórico de meses anteriores.
           </p>
           <div className="space-y-2">
             {(n.profissionais || []).map((p) => (
-              <div key={p.id} className="flex gap-2 items-center rounded-xl p-2" style={{ background: t.surfaceAlt }}>
-                <input className={CAMPO + " min-w-0"} style={{ background: t.surface, border: `1px solid ${t.border}`, color: t.text }}
-                  placeholder="Nome do profissional" value={p.nome}
-                  onChange={(e) => updateProfissional(p.id, "nome", e.target.value)} />
-                <label className="flex items-center gap-1.5 text-[11px] shrink-0" style={{ color: t.textMuted }}>
-                  <input type="checkbox" checked={p.ativo !== false} onChange={(e) => updateProfissional(p.id, "ativo", e.target.checked)} />
-                  ativo
-                </label>
-                <button onClick={() => removeProfissional(p.id)} className="btn-press shrink-0" style={{ color: t.danger }}>
-                  <Trash2 size={16} />
-                </button>
-              </div>
+              <LinhaProfissional key={p.id} p={p}
+                onChange={(campo, valor) => updateProfissional(p.id, campo, valor)}
+                onRemove={() => removeProfissional(p.id)} />
             ))}
             {(n.profissionais || []).length === 0 && (
               <p className="text-[11px]" style={{ color: t.textMuted }}>Nenhum profissional cadastrado ainda.</p>
@@ -1960,6 +2151,25 @@ function Negocio({ negocio, onSalvar, servicos, onCarregarExemplo }) {
             style={{ color: t.primaryText, background: t.primarySoft }}>
             <Plus size={13} /> adicionar profissional
           </button>
+          {nd.comissaoEquipe && (
+            <div className="pop-in rounded-xl p-3 mt-3 text-xs space-y-1" style={{ background: t.primarySoft, color: t.primaryText }}>
+              <p className="font-semibold">Comissão média da equipe: {fmtPct(nd.comissaoEquipe.pct)}</p>
+              <p style={{ color: t.text }}>
+                {nd.comissaoEquipe.ponderada
+                  ? `Ponderada pelos atendimentos de ${nd.comissaoEquipe.participantes.length} pessoas. Quem atende mais pesa mais.`
+                  : `Média simples de ${nd.comissaoEquipe.participantes.length} pessoas, porque falta o número de atendimentos de alguém. Preencha para a média ficar ponderada.`}
+              </p>
+            </div>
+          )}
+          {nd.receitaAluguelCadeiras > 0 && (
+            <div className="pop-in rounded-xl p-3 mt-3 text-xs" style={{ background: t.successSoft, color: t.successText }}>
+              <p className="font-semibold">Aluguel de cadeiras: {fmtBRL(nd.receitaAluguelCadeiras)}/mês</p>
+              <p style={{ color: t.text }}>
+                Entra como receita no DRE e reduz o custo fixo que os seus serviços precisam cobrir, de
+                {" "}{fmtBRL(nd.custoFixoTotal)} para {fmtBRL(nd.custoFixoLiquido)}.
+              </p>
+            </div>
+          )}
         </SecaoColapsavel>
 
         <SecaoColapsavel resumo={`${(n.insumosCompartilhados || []).length} cadastrado(s)`} titulo="Insumos compartilhados entre serviços" icon={Sparkles}>
@@ -1987,7 +2197,7 @@ function Negocio({ negocio, onSalvar, servicos, onCarregarExemplo }) {
 
         <SecaoColapsavel resumo={`${nd.horasTotais || 0}h/mês`} abertoInicial={!configuradoSalvo} titulo="Capacidade produtiva" icon={Clock3}>
           <div className="grid grid-cols-3 gap-2">
-            <Campo label="Número de profissionais" hint="incluindo você — MEI sozinho(a) = 1">
+            <Campo label="Número de profissionais" hint="incluindo você, sem contar quem aluga cadeira — MEI sozinho(a) = 1">
               <CampoNumero value={n.numeroProfissionais} onChange={(v) => setN({ ...n, numeroProfissionais: v })} />
             </Campo>
             <Campo label="Dias trabalhados/mês">
@@ -2161,7 +2371,18 @@ function Negocio({ negocio, onSalvar, servicos, onCarregarExemplo }) {
             <ResumoItem label="Custo fixo por hora" valor={fmtBRL(nd.custoFixoPorHora)} />
             <ResumoItem label="Capacidade/mês" valor={`${nd.horasTotais || 0} h`} />
             <ResumoItem label="Imposto sobre preço" valor={fmtPct(nd.impostoPct, 2)} />
+            {nd.receitaAluguelCadeiras > 0 && (
+              <ResumoItem label="Aluguel de cadeiras recebido" valor={`− ${fmtBRL(nd.receitaAluguelCadeiras)}`} />
+            )}
+            {nd.comissaoEquipe && (
+              <ResumoItem label="Comissão média da equipe" valor={fmtPct(nd.comissaoEquipe.pct)} />
+            )}
           </div>
+          {nd.receitaAluguelCadeiras > 0 && (
+            <p className="text-[11px] mt-3" style={{ color: "rgba(255,255,255,.85)" }}>
+              O custo fixo por hora já desconta o aluguel recebido: {fmtBRL(nd.custoFixoLiquido)} ÷ {nd.horasTotais || 0} h.
+            </p>
+          )}
         </div>
         <div className="rounded-2xl p-4 flex gap-2 items-start" style={{ background: t.surfaceAlt, border: `1px dashed ${t.border}` }}>
           <HelpCircle size={16} className="mt-0.5 shrink-0" style={{ color: t.textMuted }} />
@@ -2709,7 +2930,7 @@ function calcularPrecoMinimoPacote(itensSelecionados, nd) {
 
   const somaPrecos = itensSelecionados.reduce((s, it) => s + it.calc.preco, 0);
   if (somaPrecos <= 0) return { status: "sem-dado" };
-  const comissaoPctPonderada = itensSelecionados.reduce((s, it) => s + N(it.comissaoPct) * it.calc.preco, 0) / somaPrecos;
+  const comissaoPctPonderada = itensSelecionados.reduce((s, it) => s + comissaoEfetiva(it, nd) * it.calc.preco, 0) / somaPrecos;
   const taxaCartaoPctPonderada = itensSelecionados.reduce((s, it) => s + N(it.taxaCartaoPct) * it.calc.preco, 0) / somaPrecos;
 
   const margensEfetivas = itensSelecionados.map((it) => ({
@@ -3033,6 +3254,7 @@ const MODELOS_OPERACAO = [
   { id: "autonomo", label: "Autônomo(a), sozinho(a)", descricao: "Só eu atendo, sem equipe." },
   { id: "equipe", label: "Equipe / cadeiras comissionadas ou alugadas", descricao: "Tenho profissionais comissionados ou que alugam espaço." },
   { id: "clt", label: "Empresa com funcionários CLT", descricao: "Tenho funcionário(s) registrado(s) em carteira." },
+  { id: "locatario", label: "Alugo cadeira ou sala em outro salão", descricao: "Pago ao dono do espaço e fico com o valor dos meus serviços." },
 ];
 
 // Termo neutro de "o seu negócio" por segmento — evita a palavra "salão" fixa quando o
@@ -3207,6 +3429,8 @@ function Calculadora({ nd, negocioConfigurado, irParaNegocio, servicos, onSalvar
     nome: "", categoria: "", tipo: "servico",
     custosVariaveis: custosVariaveisIniciaisPorSegmento(nd?.perfil?.segmento),
     comissaoPct: "0", taxaCartaoPct: "0", margemPct: "20", atendimentosMes: "", horasAtendimento: "1", precoCobrado: "",
+    // Serviço novo usa a comissão média da equipe quando ela existe (Bloco 4).
+    comissaoModo: nd?.comissaoEquipe ? "equipe" : "propria",
   };
 
   const [modo, setModo] = useState("descobrir"); // 'descobrir' | 'ja-tenho'
@@ -3217,6 +3441,7 @@ function Calculadora({ nd, negocioConfigurado, irParaNegocio, servicos, onSalvar
   const [tipo, setTipo] = useState(vazio.tipo);
   const [custosVariaveis, setCustosVariaveis] = useState(vazio.custosVariaveis);
   const [comissaoPct, setComissaoPct] = useState(vazio.comissaoPct);
+  const [comissaoModo, setComissaoModo] = useState(vazio.comissaoModo);
   const [taxaCartaoPct, setTaxaCartaoPct] = useState(vazio.taxaCartaoPct);
   const [margemPct, setMargemPct] = useState(vazio.margemPct);
   const [atendimentosMes, setAtendimentosMes] = useState(vazio.atendimentosMes);
@@ -3231,13 +3456,14 @@ function Calculadora({ nd, negocioConfigurado, irParaNegocio, servicos, onSalvar
 
   // "sujo" = tem algo digitado que ainda não foi salvo neste serviço.
   const rascunhoAtual = useMemo(() => ({
-    nome: nomeServico, categoria, tipo, custosVariaveis, comissaoPct, taxaCartaoPct, margemPct,
+    nome: nomeServico, categoria, tipo, custosVariaveis, comissaoPct, comissaoModo, taxaCartaoPct, margemPct,
     atendimentosMes, horasAtendimento, modo, precoCobrado,
-  }), [nomeServico, categoria, tipo, custosVariaveis, comissaoPct, taxaCartaoPct, margemPct, atendimentosMes, horasAtendimento, modo, precoCobrado]);
+  }), [nomeServico, categoria, tipo, custosVariaveis, comissaoPct, comissaoModo, taxaCartaoPct, margemPct, atendimentosMes, horasAtendimento, modo, precoCobrado]);
   const rascunhoBase = useMemo(() => servicoEmEdicao
     ? {
         nome: servicoEmEdicao.nome, categoria: servicoEmEdicao.categoria || "", tipo: servicoEmEdicao.tipo || "servico", custosVariaveis: servicoEmEdicao.custosVariaveis,
-        comissaoPct: String(servicoEmEdicao.comissaoPct), taxaCartaoPct: String(servicoEmEdicao.taxaCartaoPct), margemPct: String(servicoEmEdicao.margemPct),
+        comissaoPct: String(servicoEmEdicao.comissaoPct), comissaoModo: servicoEmEdicao.comissaoModo || "propria",
+        taxaCartaoPct: String(servicoEmEdicao.taxaCartaoPct), margemPct: String(servicoEmEdicao.margemPct),
         atendimentosMes: String(servicoEmEdicao.atendimentosMes), horasAtendimento: String(servicoEmEdicao.horasPorAtendimento),
         modo: servicoEmEdicao.modo === "ja-tenho" ? "ja-tenho" : "descobrir",
         precoCobrado: servicoEmEdicao.precoCobrado !== undefined && servicoEmEdicao.precoCobrado !== null ? String(servicoEmEdicao.precoCobrado) : "",
@@ -3266,6 +3492,7 @@ function Calculadora({ nd, negocioConfigurado, irParaNegocio, servicos, onSalvar
       setModo(servicoEmEdicao.modo === "ja-tenho" ? "ja-tenho" : "descobrir");
       setCustosVariaveis(servicoEmEdicao.custosVariaveis);
       setComissaoPct(String(servicoEmEdicao.comissaoPct));
+      setComissaoModo(servicoEmEdicao.comissaoModo || "propria");
       setTaxaCartaoPct(String(servicoEmEdicao.taxaCartaoPct));
       setMargemPct(String(servicoEmEdicao.margemPct));
       setAtendimentosMes(String(servicoEmEdicao.atendimentosMes));
@@ -3285,7 +3512,7 @@ function Calculadora({ nd, negocioConfigurado, irParaNegocio, servicos, onSalvar
     setModo("descobrir");
     setPassoWizard(1);
     setCustosVariaveis(vazio.custosVariaveis.map((i) => ({ ...i, id: uid() })));
-    setComissaoPct(vazio.comissaoPct); setTaxaCartaoPct(vazio.taxaCartaoPct); setMargemPct(vazio.margemPct);
+    setComissaoPct(vazio.comissaoPct); setComissaoModo(vazio.comissaoModo); setTaxaCartaoPct(vazio.taxaCartaoPct); setMargemPct(vazio.margemPct);
     setAtendimentosMes(vazio.atendimentosMes); setHorasAtendimento(vazio.horasAtendimento);
     setNomeServico(vazio.nome); setCategoria(vazio.categoria); setTipo(vazio.tipo); setConfirmandoExclusaoForm(false);
     setPrecoCobrado(vazio.precoCobrado); setPrecoCobradoDebounced(vazio.precoCobrado);
@@ -3343,21 +3570,23 @@ function Calculadora({ nd, negocioConfigurado, irParaNegocio, servicos, onSalvar
 
   const resultadoA = useMemo(
     () => calcularServico({
-      custosVariaveis, comissaoPct, taxaCartaoPct, margemPct,
+      custosVariaveis, comissaoPct, comissaoModo, taxaCartaoPct, margemPct,
       horasPorAtendimento: horasAtendimento, atendimentosMes: N(atendimentosMes),
     }, nd),
-    [custosVariaveis, comissaoPct, taxaCartaoPct, margemPct, horasAtendimento, atendimentosMes, nd]
+    [custosVariaveis, comissaoPct, comissaoModo, taxaCartaoPct, margemPct, horasAtendimento, atendimentosMes, nd]
   );
 
   const resultadoB = useMemo(
     () => calcularReverso({
-      custosVariaveis, comissaoPct, taxaCartaoPct, precoCobrado: precoCobradoDebounced,
+      custosVariaveis, comissaoPct, comissaoModo, taxaCartaoPct, precoCobrado: precoCobradoDebounced,
       horasPorAtendimento: horasAtendimento, atendimentosMes: N(atendimentosMes), margemMetaPct: margemPct,
     }, nd),
-    [custosVariaveis, comissaoPct, taxaCartaoPct, precoCobradoDebounced, horasAtendimento, atendimentosMes, margemPct, nd]
+    [custosVariaveis, comissaoPct, comissaoModo, taxaCartaoPct, precoCobradoDebounced, horasAtendimento, atendimentosMes, margemPct, nd]
   );
 
   const resultadoAtivo = modo === "ja-tenho" ? resultadoB : resultadoA;
+  // Comissão que de fato entra no preço (média da equipe ou a própria do serviço).
+  const comissaoUsada = comissaoEfetiva({ comissaoPct, comissaoModo }, nd);
 
   // "Preço salvo" recalculado ao vivo com os parâmetros ORIGINAIS (sem as edições em
   // andamento), no MODO em que o serviço foi salvo, contra a config. atual do negócio.
@@ -3375,7 +3604,7 @@ function Calculadora({ nd, negocioConfigurado, irParaNegocio, servicos, onSalvar
     criadoEm: (!idNovo && servicoEmEdicao) ? servicoEmEdicao.criadoEm : Date.now(),
     editadoEm: Date.now(),
     modo,
-    custosVariaveis, comissaoPct: N(comissaoPct), taxaCartaoPct: N(taxaCartaoPct), margemPct: N(margemPct),
+    custosVariaveis, comissaoPct: N(comissaoPct), comissaoModo, taxaCartaoPct: N(taxaCartaoPct), margemPct: N(margemPct),
     horasPorAtendimento: N(horasAtendimento), atendimentosMes: N(atendimentosMes),
     precoCobrado: modo === "ja-tenho" ? N(precoCobradoDebounced) : null,
     precoConfirmado: resultadoAtivo.status === "ok" ? resultadoAtivo.preco : null,
@@ -3523,12 +3752,9 @@ function Calculadora({ nd, negocioConfigurado, irParaNegocio, servicos, onSalvar
               contexto={{ atendimentosMes: N(atendimentosMes), diasMesNegocio: nd?.diasMes, insumosCompartilhados: nd?.insumosCompartilhados || [], alocacaoPorInsumoOutrosServicos }} />
             <div style={{ height: 1, background: t.border }} />
 
-            <div className="grid grid-cols-2 gap-2">
-              <CampoPct label="Comissão do profissional" value={comissaoPct} onChange={setComissaoPct}
-                ajuda="Quanto do preço desse serviço vai pro profissional que atende, em %. Se você é sozinho(a), geralmente é 0 — o que sobra é seu pró-labore." faq="comissao-parceiros" />
-              <CampoPct label="Taxa de cartão/Pix" value={taxaCartaoPct} onChange={setTaxaCartaoPct}
-                ajuda="A taxa que a maquininha ou o banco cobra em cima da venda. Confira no seu extrato — deixar em 0 faz o preço vir mais barato do que deveria." faq="markup-divisor" />
-            </div>
+            <BlocoComissaoETaxa nd={nd} comissaoPct={comissaoPct} setComissaoPct={setComissaoPct}
+              comissaoModo={comissaoModo} setComissaoModo={setComissaoModo}
+              taxaCartaoPct={taxaCartaoPct} setTaxaCartaoPct={setTaxaCartaoPct} />
             {N(taxaCartaoPct) === 0 && (
               <p className="text-[11px] -mt-2 flex items-start gap-1" style={{ color: t.warningText }}>
                 <Info size={12} className="mt-0.5 shrink-0" />
@@ -3630,7 +3856,7 @@ function Calculadora({ nd, negocioConfigurado, irParaNegocio, servicos, onSalvar
                 )}
                 {resultadoB.status === "ok" && (
                   <SimuladorSensibilidade
-                    precoBase={resultadoB.preco} custosVariaveis={custosVariaveis} comissaoPct={comissaoPct} taxaCartaoPct={taxaCartaoPct}
+                    precoBase={resultadoB.preco} custosVariaveis={custosVariaveis} comissaoPct={comissaoUsada} taxaCartaoPct={taxaCartaoPct}
                     horasPorAtendimento={horasAtendimento} atendimentosMes={N(atendimentosMes)} nd={nd}
                   />
                 )}
@@ -3765,12 +3991,9 @@ function Calculadora({ nd, negocioConfigurado, irParaNegocio, servicos, onSalvar
 
           {passoWizard === 4 && (
             <div className="space-y-4 fade-up">
-              <div className="grid grid-cols-2 gap-2">
-                <CampoPct label="Comissão do profissional" value={comissaoPct} onChange={setComissaoPct}
-                  ajuda="Quanto do preço desse serviço vai pro profissional que atende, em %. Se você é sozinho(a), geralmente é 0 — o que sobra é seu pró-labore." faq="comissao-parceiros" />
-                <CampoPct label="Taxa de cartão/Pix" value={taxaCartaoPct} onChange={setTaxaCartaoPct}
-                  ajuda="A taxa que a maquininha ou o banco cobra em cima da venda. Confira no seu extrato — deixar em 0 faz o preço vir mais barato do que deveria." faq="markup-divisor" />
-              </div>
+              <BlocoComissaoETaxa nd={nd} comissaoPct={comissaoPct} setComissaoPct={setComissaoPct}
+                comissaoModo={comissaoModo} setComissaoModo={setComissaoModo}
+                taxaCartaoPct={taxaCartaoPct} setTaxaCartaoPct={setTaxaCartaoPct} />
               {N(taxaCartaoPct) === 0 && (
                 <p className="text-[11px] -mt-2 flex items-start gap-1" style={{ color: t.warningText }}>
                   <Info size={12} className="mt-0.5 shrink-0" />
@@ -3833,7 +4056,7 @@ function Calculadora({ nd, negocioConfigurado, irParaNegocio, servicos, onSalvar
                   )}
                   {resultadoB.status === "ok" && (
                     <SimuladorSensibilidade
-                      precoBase={resultadoB.preco} custosVariaveis={custosVariaveis} comissaoPct={comissaoPct} taxaCartaoPct={taxaCartaoPct}
+                      precoBase={resultadoB.preco} custosVariaveis={custosVariaveis} comissaoPct={comissaoUsada} taxaCartaoPct={taxaCartaoPct}
                       horasPorAtendimento={horasAtendimento} atendimentosMes={N(atendimentosMes)} nd={nd}
                     />
                   )}
@@ -4123,12 +4346,12 @@ function Painel({ nd, negocio, servicos, onRemoverServico, onEditarServico }) {
   const margemContribuicaoPonderada = somaAtendimentosMix > 0
     ? servicosValidos.reduce((s, x) => s + (N(x.atendimentosMes) / somaAtendimentosMix) * x.calc.margemContribuicaoUnitaria, 0)
     : 0;
-  const pontoEquilibrioMix = margemContribuicaoPonderada > 0 ? nd.custoFixoTotal / margemContribuicaoPonderada : Infinity;
+  const pontoEquilibrioMix = margemContribuicaoPonderada > 0 ? nd.custoFixoLiquido / margemContribuicaoPonderada : Infinity;
 
   const custoOportunidadeMes = N(negocio.capitalInvestido) * (N(negocio.taxaRetorno) / 100);
-  const peContabilRS = dre.rcm > 0 ? dre.custosFixos / dre.rcm : Infinity;
-  const peFinanceiroRS = dre.rcm > 0 ? (dre.custosFixos - nd.custoFixoNaoCaixa) / dre.rcm : Infinity;
-  const peEconomicoRS = dre.rcm > 0 ? (dre.custosFixos + custoOportunidadeMes) / dre.rcm : Infinity;
+  const peContabilRS = dre.rcm > 0 ? dre.custosFixosLiquidos / dre.rcm : Infinity;
+  const peFinanceiroRS = dre.rcm > 0 ? Math.max(0, dre.custosFixosLiquidos - nd.custoFixoNaoCaixa) / dre.rcm : Infinity;
+  const peEconomicoRS = dre.rcm > 0 ? (dre.custosFixosLiquidos + custoOportunidadeMes) / dre.rcm : Infinity;
   const margemSeguranca = dre.receitaBruta > 0 && Number.isFinite(peContabilRS)
     ? ((dre.receitaBruta - peContabilRS) / dre.receitaBruta) * 100 : null;
   const gao = dre.resultadoOperacional > 0 ? dre.margemContribuicaoTotal / dre.resultadoOperacional : null;
@@ -4147,6 +4370,7 @@ function Painel({ nd, negocio, servicos, onRemoverServico, onEditarServico }) {
       ["(-) Custos variáveis totais", -dre.custosVariaveisTotais],
       ["= Margem de contribuição", dre.margemContribuicaoTotal],
       ["(-) Custos fixos (incl. pró-labore)", -dre.custosFixos],
+      ...(dre.aluguelRecebido > 0 ? [["(+) Aluguel de cadeiras recebido", dre.aluguelRecebido]] : []),
       ["= Resultado operacional", dre.resultadoOperacional],
     ]);
     XLSX.utils.book_append_sheet(wb, wsDRE, "DRE Gerencial");
@@ -4160,6 +4384,8 @@ function Painel({ nd, negocio, servicos, onRemoverServico, onEditarServico }) {
       ["Grau de alavancagem operacional (x)", gao],
       ["Alíquota de imposto efetiva aplicada (%)", nd.impostoPct],
       ["Custo fixo total do negócio (R$/mês)", nd.custoFixoTotal],
+      ["Aluguel de cadeiras recebido (R$/mês)", nd.receitaAluguelCadeiras],
+      ["Custo fixo a cobrir pelos serviços (R$/mês)", nd.custoFixoLiquido],
       ["Custo fixo por hora (R$)", nd.custoFixoPorHora],
       ["Capacidade produtiva (horas/mês)", nd.horasTotais],
       ["Número de profissionais", nd.numeroProfissionais],
@@ -4171,9 +4397,9 @@ function Painel({ nd, negocio, servicos, onRemoverServico, onEditarServico }) {
         "Margem desejada (%)", "Horas/atend.", "Atendimentos/mês", "Margem contrib. unit. (R$)", "Lucro projetado/mês (R$)", "Status"],
       ...servicosCalc.map((s) => (
         s.calc.status === "ok"
-          ? [s.nome, s.calc.preco, s.calc.totalVariaveis, s.comissaoPct, s.taxaCartaoPct, nd.impostoPct,
+          ? [s.nome, s.calc.preco, s.calc.totalVariaveis, comissaoEfetiva(s, nd), s.taxaCartaoPct, nd.impostoPct,
              s.margemPct, s.horasPorAtendimento, s.atendimentosMes, s.calc.margemContribuicaoUnitaria, s.calc.lucroProjetadoMes, "ok"]
-          : [s.nome, null, null, s.comissaoPct, s.taxaCartaoPct, nd.impostoPct, s.margemPct, s.horasPorAtendimento,
+          : [s.nome, null, null, comissaoEfetiva(s, nd), s.taxaCartaoPct, nd.impostoPct, s.margemPct, s.horasPorAtendimento,
              s.atendimentosMes, null, null, "inválido com a config. atual — revisar na Calculadora"]
       )),
     ]);
@@ -4186,7 +4412,7 @@ function Painel({ nd, negocio, servicos, onRemoverServico, onEditarServico }) {
       ...MESES.map((mes, i) => {
         const mult = N(sazonalidade[i]) / 100;
         const receita = dre.receitaBruta * mult;
-        const resultado = receita - receita * impostoProp - receita * variavelProp - dre.custosFixos;
+        const resultado = receita - receita * impostoProp - receita * variavelProp - dre.custosFixos + dre.aluguelRecebido;
         return [mes, N(sazonalidade[i]), Math.round(receita), Math.round(resultado)];
       }),
     ]);
@@ -4202,6 +4428,7 @@ function Painel({ nd, negocio, servicos, onRemoverServico, onEditarServico }) {
       `Receita bruta: ${fmtBRL(dre.receitaBruta)}`,
       `Custos variáveis: ${fmtBRL(dre.custosVariaveisTotais)}`,
       `Custos fixos: ${fmtBRL(dre.custosFixos)}`,
+      ...(dre.aluguelRecebido > 0 ? [`Aluguel de cadeiras recebido: ${fmtBRL(dre.aluguelRecebido)}`] : []),
       `Resultado operacional: ${fmtBRL(dre.resultadoOperacional)}`,
       "",
       "Gerado no app Preço Justo.",
@@ -4456,6 +4683,11 @@ function MemorialCalculo({ negocio, nd, dre, peContabilRS, peFinanceiroRS, peEco
   const c = COR_MEMORIAL;
   const agora = new Date().toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" });
   const rcmPct = fmtPct(dre.rcm * 100, 2);
+  // Com aluguel de cadeiras recebido, a base dos pontos de equilíbrio é o custo
+  // fixo líquido desse aluguel; a fórmula e a substituição deixam isso visível.
+  const temAluguel = dre.aluguelRecebido > 0;
+  const nomeBaseCF = temAluguel ? "(Custos Fixos − Aluguel de Cadeiras Recebido)" : "Custos Fixos";
+  const valorBaseCF = temAluguel ? `(${fmtBRL(dre.custosFixos)} − ${fmtBRL(dre.aluguelRecebido)})` : fmtBRL(dre.custosFixos);
 
   return (
     <div id="memorial-calculo" style={{ background: "#fff", color: c.texto, padding: 16, fontFamily: "'Poppins', sans-serif" }}>
@@ -4470,6 +4702,9 @@ function MemorialCalculo({ negocio, nd, dre, peContabilRS, peFinanceiroRS, peEco
           <tr><td style={{ padding: "3px 0", color: c.mudo }}>Custos fixos mensais</td><td style={{ padding: "3px 0", textAlign: "right", fontWeight: 600 }}>{negocio.custosFixos.filter(cf => N(cf.valor) > 0).map((cf) => `${cf.nome}: ${fmtBRL(N(cf.valor))}`).join(" · ") || "—"}</td></tr>
           <tr><td style={{ padding: "3px 0", color: c.mudo }}>Pró-labore</td><td style={{ padding: "3px 0", textAlign: "right", fontWeight: 600 }}>{fmtBRL(nd.proLabore)}</td></tr>
           <tr><td style={{ padding: "3px 0", color: c.mudo }}>Custo fixo total/mês</td><td style={{ padding: "3px 0", textAlign: "right", fontWeight: 600 }}>{fmtBRL(nd.custoFixoTotal)}</td></tr>
+          {nd.receitaAluguelCadeiras > 0 && (
+            <tr><td style={{ padding: "3px 0", color: c.mudo }}>Aluguel de cadeiras recebido/mês</td><td style={{ padding: "3px 0", textAlign: "right", fontWeight: 600 }}>{fmtBRL(nd.receitaAluguelCadeiras)}</td></tr>
+          )}
           <tr><td style={{ padding: "3px 0", color: c.mudo }}>Capacidade produtiva</td><td style={{ padding: "3px 0", textAlign: "right", fontWeight: 600 }}>{nd.numeroProfissionais} profissional(is) × {negocio.horasDia}h × {negocio.diasMes} dias = {nd.horasTotais}h/mês</td></tr>
           <tr><td style={{ padding: "3px 0", color: c.mudo }}>Regime tributário</td><td style={{ padding: "3px 0", textAlign: "right", fontWeight: 600 }}>
             {negocio.regime === "simples" ? `Simples Nacional, Anexo ${nd.anexoUsado} (alíq. efetiva ${fmtPct(nd.impostoPct, 2)})` : negocio.regime === "mei" ? "MEI" : "Não definido"}
@@ -4480,17 +4715,19 @@ function MemorialCalculo({ negocio, nd, dre, peContabilRS, peFinanceiroRS, peEco
 
       <p style={{ fontSize: 13, fontWeight: 700, margin: "0 0 4px", borderBottom: `2px solid ${c.texto}`, paddingBottom: 4 }}>2. Indicadores — fórmula, substituição e resultado</p>
 
+      {/* Com aluguel de cadeiras recebido, a base dos pontos de equilíbrio é o custo   */}
+      {/* fixo líquido desse aluguel — a fórmula e a substituição mostram isso.          */}
       <LinhaFormula nome="Razão de Contribuição Margem (RCM)" formula="RCM = Margem de Contribuição Total ÷ Receita Bruta"
         substituicao={`${fmtBRL(dre.margemContribuicaoTotal)} ÷ ${fmtBRL(dre.receitaBruta)}`} resultado={rcmPct} />
 
-      <LinhaFormula nome="Ponto de Equilíbrio Contábil" formula="PE Contábil = Custos Fixos ÷ RCM"
-        substituicao={`${fmtBRL(dre.custosFixos)} ÷ ${rcmPct}`} resultado={fmtBRL(peContabilRS)} />
+      <LinhaFormula nome="Ponto de Equilíbrio Contábil" formula={`PE Contábil = ${nomeBaseCF} ÷ RCM`}
+        substituicao={`${valorBaseCF} ÷ ${rcmPct}`} resultado={fmtBRL(peContabilRS)} />
 
-      <LinhaFormula nome="Ponto de Equilíbrio Financeiro" formula="PE Financeiro = (Custos Fixos − Itens sem Saída de Caixa) ÷ RCM"
-        substituicao={`(${fmtBRL(dre.custosFixos)} − ${fmtBRL(nd.custoFixoNaoCaixa)}) ÷ ${rcmPct}`} resultado={fmtBRL(peFinanceiroRS)} />
+      <LinhaFormula nome="Ponto de Equilíbrio Financeiro" formula={`PE Financeiro = (${nomeBaseCF} − Itens sem Saída de Caixa) ÷ RCM`}
+        substituicao={`(${valorBaseCF} − ${fmtBRL(nd.custoFixoNaoCaixa)}) ÷ ${rcmPct}`} resultado={fmtBRL(peFinanceiroRS)} />
 
-      <LinhaFormula nome="Ponto de Equilíbrio Econômico" formula="PE Econômico = (Custos Fixos + Custo de Oportunidade do Capital) ÷ RCM"
-        substituicao={`(${fmtBRL(dre.custosFixos)} + ${fmtBRL(custoOportunidadeMes)}) ÷ ${rcmPct}`} resultado={fmtBRL(peEconomicoRS)} />
+      <LinhaFormula nome="Ponto de Equilíbrio Econômico" formula={`PE Econômico = (${nomeBaseCF} + Custo de Oportunidade do Capital) ÷ RCM`}
+        substituicao={`(${valorBaseCF} + ${fmtBRL(custoOportunidadeMes)}) ÷ ${rcmPct}`} resultado={fmtBRL(peEconomicoRS)} />
 
       <LinhaFormula nome="Margem de Segurança" formula="MS = (Receita Bruta − PE Contábil) ÷ Receita Bruta"
         substituicao={`(${fmtBRL(dre.receitaBruta)} − ${fmtBRL(peContabilRS)}) ÷ ${fmtBRL(dre.receitaBruta)}`}
@@ -4500,8 +4737,8 @@ function MemorialCalculo({ negocio, nd, dre, peContabilRS, peFinanceiroRS, peEco
         substituicao={`${fmtBRL(dre.margemContribuicaoTotal)} ÷ ${fmtBRL(dre.resultadoOperacional)}`}
         resultado={gao === null ? "— (operando abaixo do equilíbrio)" : `${gao.toFixed(2)}×`} />
 
-      <LinhaFormula nome="Ponto de Equilíbrio Ponderado (Mix de Serviços)" formula="PE Mix = Custo Fixo Total ÷ MCP, onde MCP = Σ(peso do serviço × margem de contribuição unitária)"
-        substituicao={`${fmtBRL(nd.custoFixoTotal)} ÷ ${fmtBRL(margemContribuicaoPonderada)}/atend.`}
+      <LinhaFormula nome="Ponto de Equilíbrio Ponderado (Mix de Serviços)" formula={`PE Mix = ${nomeBaseCF} ÷ MCP, onde MCP = Σ(peso do serviço × margem de contribuição unitária)`}
+        substituicao={`${valorBaseCF} ÷ ${fmtBRL(margemContribuicaoPonderada)}/atend.`}
         resultado={Number.isFinite(pontoEquilibrioMix) ? `${Math.ceil(pontoEquilibrioMix)} atendimentos/mês` : "—"} />
 
       <p style={{ fontSize: 13, fontWeight: 700, margin: "16px 0 8px", borderBottom: `2px solid ${c.texto}`, paddingBottom: 4 }}>3. DRE Gerencial do Mês</p>
@@ -4514,6 +4751,7 @@ function MemorialCalculo({ negocio, nd, dre, peContabilRS, peFinanceiroRS, peEco
             ["(–) Custos variáveis totais", -dre.custosVariaveisTotais, false],
             ["= Margem de contribuição", dre.margemContribuicaoTotal, true],
             ["(–) Custos fixos (incl. pró-labore)", -dre.custosFixos, false],
+            ...(dre.aluguelRecebido > 0 ? [["(+) Aluguel de cadeiras recebido", dre.aluguelRecebido, false]] : []),
             ["= Resultado operacional", dre.resultadoOperacional, true],
           ].map(([label, valor, forte]) => (
             <tr key={label} style={{ borderTop: forte ? `1px solid ${c.borda}` : "none" }}>
@@ -4544,6 +4782,7 @@ function DRECard({ dre, origem = "projecao", mesLabel }) {
     { label: "(–) Custos variáveis totais", valor: -dre.custosVariaveisTotais },
     { label: "= Margem de contribuição", valor: dre.margemContribuicaoTotal, sub: true },
     { label: "(–) Custos fixos (incl. pró-labore)", valor: -dre.custosFixos },
+    ...(N(dre.aluguelRecebido) > 0 ? [{ label: "(+) Aluguel de cadeiras recebido", valor: dre.aluguelRecebido }] : []),
     { label: "= Resultado operacional", valor: dre.resultadoOperacional, forte: true },
   ];
   return (
@@ -4884,20 +5123,21 @@ function gerarFechamentoExemplo(chave, nd, servicos, indice) {
       const calc = calcularParaExibicao(s, nd);
       somaMateriais += qtd * calc.totalVariaveis;
       const receitaEstimada = qtd * calc.preco;
-      somaComissaoTaxa += receitaEstimada * ((N(s.comissaoPct) + N(s.taxaCartaoPct)) / 100);
+      somaComissaoTaxa += receitaEstimada * ((comissaoEfetiva(s, nd) + N(s.taxaCartaoPct)) / 100);
     });
     custosVariaveisReais = somaMateriais + somaComissaoTaxa;
   }
 
   const custosFixosSnapshot = nd.custoFixoTotal;
+  const aluguelRecebidoSnapshot = N(nd.receitaAluguelCadeiras);
   const impostoPagoReal = faturamentoBruto * (nd.impostoPct / 100);
   const custosVariaveisUsados = custosVariaveisReais ?? 0;
-  const lucroLiquidoCalculado = faturamentoBruto - custosVariaveisUsados - custosFixosSnapshot - impostoPagoReal;
+  const lucroLiquidoCalculado = faturamentoBruto - custosVariaveisUsados - custosFixosSnapshot + aluguelRecebidoSnapshot - impostoPagoReal;
   const margemLiquidaPctCalculada = faturamentoBruto > 0 ? (lucroLiquidoCalculado / faturamentoBruto) * 100 : 0;
 
   return {
     mes: chave, faturamentoBruto, atendimentosTotais, atendimentosPorServico,
-    custosVariaveisReaisInformados: custosVariaveisReais, custosFixosSnapshot, impostoPagoReal,
+    custosVariaveisReaisInformados: custosVariaveisReais, custosFixosSnapshot, aluguelRecebidoSnapshot, impostoPagoReal,
     proLaboreRealPago: nd.proLabore,
     observacoes: "Dado de exemplo — gerado só pra demonstrar o gráfico, não é real.",
     exemplo: true,
@@ -4966,7 +5206,7 @@ function FormularioFechamento({ mes, nd, servicos, profissionais, registroExiste
       const valorUnitarioUsado = valorUnitarioReal ?? calc.preco;
       const receita = quantidade * valorUnitarioUsado;
       const custoMaterial = quantidade * calc.totalVariaveis;
-      const custoComissao = receita * (N(s.comissaoPct) / 100);
+      const custoComissao = receita * (comissaoEfetiva(s, nd) / 100);
       const custoTaxaCartao = receita * (N(s.taxaCartaoPct) / 100);
       return { servicoId: s.id, nome: s.nome, quantidade, receita, valorUnitarioUsado, estimado: valorUnitarioReal == null, custoMaterial, custoComissao, custoTaxaCartao };
     }).filter(Boolean);
@@ -4984,9 +5224,10 @@ function FormularioFechamento({ mes, nd, servicos, profissionais, registroExiste
   const atendimentosTotais = mostrarPorServico ? atendimentosTotaisAuto : N(atendimentosTotaisManual);
 
   const custosFixosSnapshot = nd.custoFixoTotal;
+  const aluguelRecebidoSnapshot = N(nd.receitaAluguelCadeiras);
   const impostoEstimado = faturamento * (nd.impostoPct / 100);
   const custosVariaveisUsados = custosVariaveisReais ?? 0;
-  const lucroLiquidoCalculado = faturamento - custosVariaveisUsados - custosFixosSnapshot - impostoEstimado;
+  const lucroLiquidoCalculado = faturamento - custosVariaveisUsados - custosFixosSnapshot + aluguelRecebidoSnapshot - impostoEstimado;
   const margemLiquidaPctCalculada = faturamento > 0 ? (lucroLiquidoCalculado / faturamento) * 100 : 0;
   const valido = faturamento > 0 && atendimentosTotais > 0;
 
@@ -5013,6 +5254,7 @@ function FormularioFechamento({ mes, nd, servicos, profissionais, registroExiste
       divisaoPorProfissional,
       custosVariaveisReaisInformados: custosVariaveisReais,
       custosFixosSnapshot,
+      aluguelRecebidoSnapshot,
       impostoPagoReal: impostoEstimado,
       proLaboreRealPago: nd.proLabore,
       observacoes,
@@ -5140,6 +5382,9 @@ function FormularioFechamento({ mes, nd, servicos, profissionais, registroExiste
       {faturamento > 0 && (
         <div className="rounded-lg p-2.5 text-xs" style={{ background: t.surfaceAlt, border: `1px solid ${t.border}` }}>
           <div className="flex justify-between"><span style={{ color: t.textMuted }}>Custo fixo (config. atual)</span><span className="font-num">{fmtBRL(custosFixosSnapshot)}</span></div>
+          {aluguelRecebidoSnapshot > 0 && (
+            <div className="flex justify-between"><span style={{ color: t.textMuted }}>Aluguel de cadeiras recebido</span><span className="font-num">+{fmtBRL(aluguelRecebidoSnapshot)}</span></div>
+          )}
           <div className="flex justify-between">
             <span style={{ color: t.textMuted }}>Custo variável {mostrarPorServico ? "(real)" : "(não informado)"}</span>
             <span className="font-num">{fmtBRL(custosVariaveisUsados)}</span>
@@ -5355,7 +5600,7 @@ function margensPorServicoNoFechamento(fechamento, servicos, nd) {
     if (calc.status !== "ok") return;
     const receita = d.valorReal != null ? d.valorReal : d.quantidade * calc.preco;
     const custoMaterial = d.quantidade * calc.totalVariaveis;
-    const custoComissao = receita * (N(servico.comissaoPct) / 100);
+    const custoComissao = receita * (comissaoEfetiva(servico, nd) / 100);
     const custoTaxaCartao = receita * (N(servico.taxaCartaoPct) / 100);
     const custoImposto = receita * (nd.impostoPct / 100);
     resultado[id] = {
@@ -5775,7 +6020,7 @@ function ProjecaoCaixa({ dre, sazonalidade, onChange, fechamentos }) {
     const impostoProp = dre.receitaBruta > 0 ? dre.impostos / dre.receitaBruta : 0;
     const custosVar = receita * variavelProp;
     const impostos = receita * impostoProp;
-    const resultado = receita - impostos - custosVar - dre.custosFixos;
+    const resultado = receita - impostos - custosVar - dre.custosFixos + dre.aluguelRecebido;
     return { mes: labelMes(chave), Receita: Math.round(receita), Resultado: Math.round(resultado), real: false };
   });
 
