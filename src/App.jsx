@@ -11,6 +11,7 @@ import {
   Download, Printer, X, Pencil, Sun, Moon, Monitor, Settings2, Share2, ChevronDown, CalendarCheck, Package,
   Scissors, Hand, Flower2,
 } from "lucide-react";
+import { createPortal } from "react-dom";
 import * as XLSX from "xlsx";
 
 /* ======================================================================= */
@@ -207,6 +208,16 @@ function aliquotaEfetiva(rbt12, tabela) {
 /* ======================================================================= */
 /* Dados reais — Google Places, coletados nesta sessão (Feira de Santana)  */
 /* ======================================================================= */
+/* A data exata da coleta não foi registrada no código. O que dá pra       */
+/* comprovar é o limite: os dados já estavam no build de 16/08/2026. Por    */
+/* isso a tela mostra "até agosto de 2026" e não uma data inventada. Ao     */
+/* fazer uma nova coleta, preencha `data` (AAAA-MM-DD) e a tela passa a     */
+/* mostrar a data exata.                                                    */
+const COLETA_ESTABELECIMENTOS = {
+  fonte: "Google Maps (perfis públicos via Google Places)",
+  data: null,
+  limiteComprovado: "agosto de 2026",
+};
 const ESTABELECIMENTOS_REAIS = [
   { nome: "Glamour Beauty Studio", tipo: "Salão", bairro: "Papagaio", cidade: "Feira de Santana", avaliacao: 4.9, avaliacoes: 75 },
   { nome: "Espaço de Beleza Loy Ramos", tipo: "Salão", bairro: "Santa Mônica", cidade: "Feira de Santana", avaliacao: 4.9, avaliacoes: 282 },
@@ -724,7 +735,7 @@ function useToast() {
 /* ======================================================================= */
 /* App                                                                      */
 /* ======================================================================= */
-const VERSAO_APP = "v7.8";
+const VERSAO_APP = "v7.9";
 const CHAVE_TEMA = "preco-justo:tema";
 
 /* Rede de segurança: se qualquer aba travar por um motivo que eu não       */
@@ -788,6 +799,10 @@ function App({ onSair, nomeEstabelecimento } = {}) {
   const [negocio, setNegocio] = useState(null);
   const [servicos, setServicos] = useState(null);
   const [tab, setTab] = useState("negocio");
+  // Pergunta do FAQ aberta por cima da tela (a partir de uma dica "?") e
+  // pergunta a destacar quando o usuário escolhe ir para a aba FAQ.
+  const [explicacaoFaq, setExplicacaoFaq] = useState(null);
+  const [faqAlvo, setFaqAlvo] = useState(null);
   const [tabLoading, setTabLoading] = useState(true);
   const [servicoEmEdicao, setServicoEmEdicao] = useState(null);
 
@@ -853,8 +868,12 @@ function App({ onSair, nomeEstabelecimento } = {}) {
   // "tem certeza" acontece ANTES, dentro do componente Negócio. Remove os
   // serviços antigos do storage de verdade (não só do estado local), senão
   // eles voltariam a aparecer depois de um reload.
+  // O perfil (nome, segmento, modelo, cidade) é do usuário, não do exemplo: ele é
+  // mantido. Sem isso o perfil voltava vazio, o segmento sumia e o assistente
+  // inicial reaparecia como se nunca tivesse sido preenchido (Issue #4).
   const carregarExemplo = useCallback(() => {
-    const { negocio: negocioExemplo, servicos: servicosExemplo } = gerarDadosExemplo();
+    const { negocio: exemploBase, servicos: servicosExemplo } = gerarDadosExemplo();
+    const negocioExemplo = negocio?.perfil?.segmento ? { ...exemploBase, perfil: negocio.perfil } : exemploBase;
     setNegocio(negocioExemplo);
     salvarComFallback("negocio:config", JSON.stringify(negocioExemplo));
     setServicos((prevServicos) => {
@@ -863,7 +882,7 @@ function App({ onSair, nomeEstabelecimento } = {}) {
     });
     servicosExemplo.forEach((s) => salvarComFallback(`servicos:${s.id}`, JSON.stringify(s)));
     setTab("calculadora");
-  }, []);
+  }, [negocio]);
 
   useEffect(() => {
     setTabLoading(true);
@@ -875,6 +894,7 @@ function App({ onSair, nomeEstabelecimento } = {}) {
 
   return (
     <ThemeCtx.Provider value={t}>
+    <FaqLinkContext.Provider value={setExplicacaoFaq}>
       {/* 100dvh em vez de 100vh: no mobile, 100vh é calculado com a barra de endereço do  */}
       {/* navegador ESCONDIDA (o maior viewport possível) — não com o que está realmente  */}
       {/* visível. Como a barra de baixo é fixed;bottom:0, ela ficava posicionada relativa */}
@@ -899,6 +919,13 @@ function App({ onSair, nomeEstabelecimento } = {}) {
           .fade-up { animation: fadeUp .3s ease both; }
           @keyframes popIn { from { opacity: 0; transform: scale(.96); } to { opacity: 1; transform: scale(1); } }
           .pop-in { animation: popIn .2s cubic-bezier(.2,.8,.2,1) both; }
+          /* Painel de explicação (sheet/diálogo): entrada e saída simétricas */
+          @keyframes backdropIn { from { opacity: 0; } to { opacity: 1; } }
+          @keyframes sheetIn { from { opacity: 0; transform: translateY(24px); } to { opacity: 1; transform: translateY(0); } }
+          .backdrop-in { animation: backdropIn .2s ease both; }
+          .backdrop-out { animation: backdropIn .18s ease reverse both; }
+          .sheet-in { animation: sheetIn .26s cubic-bezier(.2,.8,.2,1) both; }
+          .sheet-out { animation: sheetIn .18s ease-in reverse both; }
           .btn-press { transition: transform .2s ease, opacity .2s ease, background .2s ease, border-color .2s ease, box-shadow .2s ease; }
           .btn-press:active { transform: scale(.97); }
           .tab-btn { transition: color .2s ease, background .2s ease; white-space: nowrap; }
@@ -952,7 +979,8 @@ function App({ onSair, nomeEstabelecimento } = {}) {
             body.imprimindo-memorial #memorial-calculo-wrapper { display: block !important; }
           }
           @media (prefers-reduced-motion: reduce) {
-            .skeleton-shimmer, .fade-up, .pop-in, .btn-press, input, button { animation: none !important; transition: none !important; }
+            .skeleton-shimmer, .fade-up, .pop-in, .btn-press, input, button,
+            .backdrop-in, .backdrop-out, .sheet-in, .sheet-out { animation: none !important; transition: none !important; }
           }
         `}</style>
 
@@ -976,12 +1004,20 @@ function App({ onSair, nomeEstabelecimento } = {}) {
                 )}
                 {tab === "estoque" && <Estoque negocio={negocio} onSalvarNegocio={salvarNegocio} />}
                 {tab === "observatorio" && <Observatorio />}
-                {tab === "faq" && <Faq />}
+                {tab === "faq" && <Faq alvo={faqAlvo} />}
               </LimiteDeErro>
             </div>
           )}
         </main>
       </div>
+      {explicacaoFaq && (
+        <PainelExplicacao
+          faqId={explicacaoFaq}
+          onFechar={() => setExplicacaoFaq(null)}
+          onVerFaq={() => { setFaqAlvo({ id: explicacaoFaq, em: Date.now() }); setTab("faq"); }}
+        />
+      )}
+    </FaqLinkContext.Provider>
     </ThemeCtx.Provider>
   );
 }
@@ -1152,35 +1188,110 @@ function TabNav({ tab, setTab, configurado }) {
 /* ======================================================================= */
 const CAMPO = "w-full rounded-xl px-3 py-2.5 text-sm outline-none";
 
+/* Ponte entre as dicas "?" e a aba FAQ: o App fornece uma função que abre */
+/* a aba FAQ já com a pergunta certa expandida. Sem provider (ex.: em     */
+/* testes ou fora do App), o link simplesmente não aparece.               */
+const FaqLinkContext = createContext(null);
+
 /* Ajuda tocável (não hover, porque é mobile) — "?" pequeno que abre uma    */
-/* dica de 1 frase, pro usuário leigo não precisar adivinhar o que preencher.*/
-function Ajuda({ texto }) {
+/* dica curta, pro usuário leigo não precisar adivinhar o que preencher.    */
+/* `faq` (opcional) é o id de uma pergunta do FAQ_DADOS: aparece o link    */
+/* "Entender melhor" que leva à explicação completa.                        */
+function Ajuda({ texto, faq }) {
   const t = useT();
+  const abrirFaq = useContext(FaqLinkContext);
   const [aberto, setAberto] = useState(false);
+  const [pos, setPos] = useState(null);
+  const botaoRef = useRef(null);
+  const balaoRef = useRef(null);
+
+  // O balão vai para o fim do <body> (portal) com posição fixa calculada a
+  // partir do "?". Dentro do card ele era cortado pelas seções recolhíveis
+  // (overflow: hidden) e, perto da borda, saía da tela no celular.
+  const LARGURA = 230;
+  const FOLGA = 12;
+  const posicionar = useCallback(() => {
+    const r = botaoRef.current?.getBoundingClientRect();
+    if (!r) return;
+    const vw = window.innerWidth || document.documentElement.clientWidth;
+    const vh = window.innerHeight || document.documentElement.clientHeight;
+    // O "?" saiu da tela (rolagem longa): não faz sentido manter o balão solto.
+    if (r.bottom < 0 || r.top > vh) { setAberto(false); return; }
+    const largura = Math.min(LARGURA, vw - FOLGA * 2);
+    const left = Math.min(Math.max(r.left + r.width / 2 - largura / 2, FOLGA), vw - FOLGA - largura);
+    const alturaBalao = balaoRef.current?.offsetHeight || 0;
+    const cabeEmCima = r.top - 8 - alturaBalao >= FOLGA;
+    setPos(cabeEmCima || !alturaBalao
+      ? { left, largura, bottom: vh - r.top + 8 }
+      : { left, largura, top: r.bottom + 8 });
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!aberto) { setPos(null); return; }
+    posicionar();
+  }, [aberto, pos?.largura, posicionar]);
+
+  // Acompanha o "?" se a página rolar ou a tela girar, e fecha ao tocar fora.
+  useEffect(() => {
+    if (!aberto) return undefined;
+    const fora = (e) => {
+      if (balaoRef.current?.contains(e.target) || botaoRef.current?.contains(e.target)) return;
+      setAberto(false);
+    };
+    document.addEventListener("pointerdown", fora);
+    window.addEventListener("scroll", posicionar, true);
+    window.addEventListener("resize", posicionar);
+    return () => {
+      document.removeEventListener("pointerdown", fora);
+      window.removeEventListener("scroll", posicionar, true);
+      window.removeEventListener("resize", posicionar);
+    };
+  }, [aberto, posicionar]);
+
   if (!texto) return null;
+  const linkFaq = faq && abrirFaq;
   return (
     <span className="relative inline-block" style={{ marginLeft: 4, verticalAlign: "middle" }}>
       <button
-        type="button" onClick={() => setAberto((v) => !v)} aria-label="Ajuda"
+        ref={botaoRef}
+        type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); setAberto((v) => !v); }} aria-label="Ajuda" aria-expanded={aberto}
         className="btn-press touch-target inline-flex items-center justify-center rounded-full"
-        style={{ width: 15, height: 15, background: t.surfaceAlt, color: t.textMuted, fontSize: 10, fontWeight: 700, border: `1px solid ${t.border}`, lineHeight: 1 }}
+        style={{ width: 15, height: 15, background: aberto ? t.text : t.surfaceAlt, color: aberto ? t.bg : t.textMuted, fontSize: 10, fontWeight: 700, border: `1px solid ${aberto ? t.text : t.border}`, lineHeight: 1 }}
       >
         ?
       </button>
-      {aberto && (
+      {aberto && createPortal(
         <span
-          onClick={() => setAberto(false)}
-          className="pop-in absolute z-50 rounded-lg p-2 text-[11px] leading-snug text-left"
-          style={{ background: t.text, color: t.bg, width: 190, bottom: "140%", left: "50%", transform: "translateX(-50%)", boxShadow: t.shadow, fontWeight: 400 }}
+          ref={balaoRef} role="tooltip"
+          onClick={(e) => { e.stopPropagation(); setAberto(false); }}
+          className="pop-in rounded-lg p-2.5 text-[11px] leading-snug text-left"
+          style={{
+            position: "fixed", zIndex: 55, display: "block",
+            left: pos?.left ?? 0, width: pos?.largura ?? LARGURA,
+            ...(pos?.top != null ? { top: pos.top } : { bottom: pos?.bottom ?? 0 }),
+            visibility: pos ? "visible" : "hidden",
+            background: t.text, color: t.bg, boxShadow: t.shadow, fontWeight: 400, whiteSpace: "normal",
+          }}
         >
           {texto}
-        </span>
+          {linkFaq && (
+            <button
+              type="button"
+              onClick={(e) => { e.preventDefault(); e.stopPropagation(); setAberto(false); abrirFaq(faq); }}
+              className="btn-press block mt-2 font-semibold underline underline-offset-2"
+              style={{ color: t.bg }}
+            >
+              Entender melhor →
+            </button>
+          )}
+        </span>,
+        document.body
       )}
     </span>
   );
 }
 
-function Campo({ label, hint, ajuda, children }) {
+function Campo({ label, hint, ajuda, faq, children }) {
   const t = useT();
   return (
     // min-w-0 é inofensivo em qualquer contexto normal — só importa quando Campo está
@@ -1190,7 +1301,7 @@ function Campo({ label, hint, ajuda, children }) {
     // alugadas" é longa) — o mesmo bug de antes (barra de baixo, resumo das seções),
     // só que num terceiro lugar. Corrigindo aqui uma vez só, em vez de campo por campo.
     <label className="block min-w-0">
-      <span className="text-xs font-medium" style={{ color: t.textMuted }}>{label}{ajuda && <Ajuda texto={ajuda} />}</span>
+      <span className="text-xs font-medium" style={{ color: t.textMuted }}>{label}{ajuda && <Ajuda texto={ajuda} faq={faq} />}</span>
       <div className="mt-1">{children}</div>
       {hint && <p className="text-[11px] mt-1" style={{ color: t.textMuted }}>{hint}</p>}
     </label>
@@ -1228,11 +1339,11 @@ function CampoMoeda({ value, onChange }) {
   );
 }
 
-function CampoPct({ label, value, onChange, ajuda }) {
+function CampoPct({ label, value, onChange, ajuda, faq }) {
   const t = useT();
   const campoStyle = { background: t.surface, border: `1px solid ${t.border}`, color: t.text };
   return (
-    <Campo label={label} ajuda={ajuda}>
+    <Campo label={label} ajuda={ajuda} faq={faq}>
       <div className="flex items-center gap-1">
         <input className={CAMPO + " font-num"} style={campoStyle} type="number" min="0" max="99" value={value}
           onChange={(e) => onChange(e.target.value)} />
@@ -1259,7 +1370,7 @@ function Secao({ titulo, icon: Icon, ajuda, children }) {
 // Mesma receita já usada em Fechamento Mensal, Evolução e Insumos internos (Estoque) —
 // aberto/fechado + ChevronDown que gira + pop-in na entrada. resumo aparece só quando
 // fechado, pra dar pra escanear sem precisar abrir.
-function SecaoColapsavel({ titulo, icon: Icon, ajuda, resumo, abertoInicial = false, children }) {
+function SecaoColapsavel({ titulo, icon: Icon, ajuda, faq, resumo, abertoInicial = false, children }) {
   const t = useT();
   const [aberto, setAberto] = useState(abertoInicial);
   return (
@@ -1268,7 +1379,7 @@ function SecaoColapsavel({ titulo, icon: Icon, ajuda, resumo, abertoInicial = fa
         <span className="flex items-center gap-1.5 min-w-0">
           {Icon && <Icon size={14} style={{ color: t.primaryText, flexShrink: 0 }} />}
           <span className="text-sm font-semibold text-left truncate min-w-0" style={{ color: t.text }}>{titulo}</span>
-          {ajuda && <span onClick={(e) => e.stopPropagation()}><Ajuda texto={ajuda} /></span>}
+          {ajuda && <span onClick={(e) => e.stopPropagation()}><Ajuda texto={ajuda} faq={faq} /></span>}
         </span>
         <span className="flex items-center gap-2 min-w-0">
           {!aberto && resumo && <span className="text-[11px] truncate max-w-[42vw] min-w-0" style={{ color: t.textMuted }}>{resumo}</span>}
@@ -1570,7 +1681,7 @@ function Negocio({ negocio, onSalvar, servicos, onCarregarExemplo }) {
           ) : (
             <div className="pop-in flex items-center gap-2 flex-wrap text-sm" style={{ color: t.danger }}>
               <AlertTriangle size={16} className="shrink-0" />
-              <span className="flex-1 basis-full sm:basis-auto min-w-0">Isso substitui o que você já preencheu (e qualquer serviço salvo). Tem certeza?</span>
+              <span className="flex-1 basis-full sm:basis-auto min-w-0">Isso substitui custos, configurações e serviços que você já preencheu. Seu perfil (nome, segmento e cidade) é mantido. Tem certeza?</span>
               <button onClick={() => { onCarregarExemplo(); setConfirmandoExemplo(false); }} className="btn-press font-semibold underline shrink-0">Sim, carregar exemplo</button>
               <button onClick={() => setConfirmandoExemplo(false)} className="btn-press underline shrink-0" style={{ color: t.textMuted }}>Cancelar</button>
             </div>
@@ -1591,7 +1702,7 @@ function Negocio({ negocio, onSalvar, servicos, onCarregarExemplo }) {
           ) : (
             <div className="pop-in flex items-center gap-2 flex-wrap text-xs rounded-xl p-2.5" style={{ background: t.dangerSoft, color: t.danger }}>
               <AlertTriangle size={14} className="shrink-0" />
-              <span className="flex-1 basis-full sm:basis-auto min-w-0">Isso substitui o que você já preencheu (e qualquer serviço salvo). Tem certeza?</span>
+              <span className="flex-1 basis-full sm:basis-auto min-w-0">Isso substitui custos, configurações e serviços que você já preencheu. Seu perfil (nome, segmento e cidade) é mantido. Tem certeza?</span>
               <button onClick={() => { onCarregarExemplo(); setConfirmandoExemplo(false); }} className="btn-press font-semibold underline shrink-0">Sim, carregar exemplo</button>
               <button onClick={() => setConfirmandoExemplo(false)} className="btn-press underline shrink-0" style={{ color: t.textMuted }}>Cancelar</button>
             </div>
@@ -1651,7 +1762,7 @@ function Negocio({ negocio, onSalvar, servicos, onCarregarExemplo }) {
           resumo={`${n.custosFixos.length} conta${n.custosFixos.length === 1 ? "" : "s"} · ${fmtBRL(n.custosFixos.reduce((s, c) => s + N(c.valor), 0))}/mês`}
           abertoInicial={!configuradoSalvo}
           titulo={`Contas Fixas d${termoEstabelecimento(n.perfil?.segmento).artigo} ${termoEstabelecimento(n.perfil?.segmento).termo.charAt(0).toUpperCase()}${termoEstabelecimento(n.perfil?.segmento).termo.slice(1)}`} icon={Building2}
-          ajuda="Despesas que você paga todo mês, atendendo ou não — aluguel, água, luz, contador. Em contabilidade isso se chama 'custo fixo'.">
+          ajuda="Despesas que você paga todo mês, atendendo ou não — aluguel, água, luz, contador. Em contabilidade isso se chama 'custo fixo'." faq="custo-fixo-variavel">
           <p className="text-[11px] mb-2" style={{ color: t.textMuted }}>
             Comecei com as categorias mais comuns do setor, valores em branco — apague o que não se aplica a você e
             some o que estiver faltando.
@@ -1778,7 +1889,7 @@ function Negocio({ negocio, onSalvar, servicos, onCarregarExemplo }) {
         <div style={{ height: 1, background: t.border }} />
 
         <SecaoColapsavel resumo={N(n.proLabore) > 0 ? `${fmtBRL(N(n.proLabore))}/mês` : "não definido"} abertoInicial={!configuradoSalvo} titulo="Pró-labore do dono" icon={PiggyBank}
-          ajuda="É o seu próprio salário. Mesmo trabalhando pra si, seu tempo tem custo — se não colocar isso aqui, o app vai achar que seu trabalho é de graça.">
+          ajuda="É o seu próprio salário. Mesmo trabalhando pra si, seu tempo tem custo — se não colocar isso aqui, o app vai achar que seu trabalho é de graça." faq="o-que-e-pro-labore">
           <Campo label="Quanto você retira do negócio por mês (ou pagaria a si mesmo por essa função)" hint="Erro clássico de MEI/microempresa: não contar o próprio trabalho como custo.">
             <CampoMoeda value={n.proLabore} onChange={(v) => setN({ ...n, proLabore: v })} />
           </Campo>
@@ -1855,10 +1966,12 @@ function Negocio({ negocio, onSalvar, servicos, onCarregarExemplo }) {
           {n.regime === "simples" && (
             <div className="space-y-3">
               <div className="grid grid-cols-2 gap-2">
-                <Campo label="Receita bruta últimos 12 meses (RBT12)">
+                <Campo label="Receita bruta últimos 12 meses (RBT12)" faq="rbt12-aliquota-efetiva"
+                  ajuda="Tudo o que o negócio faturou nos últimos 12 meses, somado. O Simples Nacional usa esse total pra achar sua alíquota: quanto maior o faturamento acumulado, maior o percentual de imposto. Seu contador tem esse número.">
                   <CampoMoeda value={n.rbt12} onChange={(v) => setN({ ...n, rbt12: v })} />
                 </Campo>
-                <Campo label="Folha de pagamento 12 meses" hint="salários + pró-labore + encargos + FGTS">
+                <Campo label="Folha de pagamento 12 meses" hint="salários + pró-labore + encargos + FGTS" faq="fator-r"
+                  ajuda="Quanto o negócio gastou com pessoas em 12 meses, incluindo o seu pró-labore. Dividido pelo faturamento, isso dá o Fator R: a partir de 28%, o imposto pode cair do Anexo V para o Anexo III, que é mais barato.">
                   <CampoMoeda value={n.folha12} onChange={(v) => setN({ ...n, folha12: v })} />
                 </Campo>
               </div>
@@ -1876,10 +1989,10 @@ function Negocio({ negocio, onSalvar, servicos, onCarregarExemplo }) {
               {nd.aliqInfo && (
                 <div className="rounded-xl p-3" style={{ background: t.surfaceAlt }}>
                   <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs" style={{ color: t.textMuted }}>
-                    <span>Fator R: <b className="font-num">{fmtPct((nd.fatorR || 0) * 100)}</b></span>
+                    <span>Fator R: <b className="font-num">{fmtPct((nd.fatorR || 0) * 100)}</b><Ajuda faq="fator-r" texto="Folha de pagamento ÷ faturamento dos últimos 12 meses. A partir de 28%, serviços que estariam no Anexo V passam para o Anexo III, com imposto menor." /></span>
                     <span>Anexo aplicado: <b>{nd.anexoUsado}</b></span>
-                    <span>Alíquota nominal: <b className="font-num">{fmtPct(nd.aliqInfo.aliqNominal * 100)}</b></span>
-                    <span>Alíquota efetiva: <b className="font-num">{fmtPct(nd.impostoPct, 2)}</b></span>
+                    <span>Alíquota nominal: <b className="font-num">{fmtPct(nd.aliqInfo.aliqNominal * 100)}</b><Ajuda faq="rbt12-aliquota-efetiva" texto="O percentual de tabela da sua faixa de faturamento. Não é o que você paga de fato: a lei desconta uma parcela fixa, e o resultado é a alíquota efetiva ao lado." /></span>
+                    <span>Alíquota efetiva: <b className="font-num">{fmtPct(nd.impostoPct, 2)}</b><Ajuda faq="rbt12-aliquota-efetiva" texto="O percentual de imposto que você realmente paga sobre cada venda. É este número que o app embute no preço dos seus serviços." /></span>
                   </div>
                 </div>
               )}
@@ -1890,7 +2003,9 @@ function Negocio({ negocio, onSalvar, servicos, onCarregarExemplo }) {
 
         <div style={{ height: 1, background: t.border }} />
 
-        <SecaoColapsavel resumo={N(n.capitalInvestido) > 0 ? `${fmtBRL(N(n.capitalInvestido))} investido` : "não definido"} titulo="Para o ponto de equilíbrio econômico" icon={TrendingUp}>
+        <SecaoColapsavel resumo={N(n.capitalInvestido) > 0 ? `${fmtBRL(N(n.capitalInvestido))} investido` : "não definido"} titulo="Para o ponto de equilíbrio econômico" icon={TrendingUp}
+          faq="ponto-de-equilibrio"
+          ajuda="Opcional. Serve pra responder: o negócio rende mais do que se esse dinheiro estivesse aplicado no banco? Se rende menos, você está trabalhando sem o retorno que o risco do negócio exige.">
           <div className="grid grid-cols-2 gap-2">
             <Campo label="Capital investido no negócio" hint="equipamentos, reforma, capital de giro">
               <CampoMoeda value={n.capitalInvestido} onChange={(v) => setN({ ...n, capitalInvestido: v })} />
@@ -3265,9 +3380,9 @@ function Calculadora({ nd, negocioConfigurado, irParaNegocio, servicos, onSalvar
 
             <div className="grid grid-cols-2 gap-2">
               <CampoPct label="Comissão do profissional" value={comissaoPct} onChange={setComissaoPct}
-                ajuda="Quanto do preço desse serviço vai pro profissional que atende, em %. Se você é sozinho(a), geralmente é 0 — o que sobra é seu pró-labore." />
+                ajuda="Quanto do preço desse serviço vai pro profissional que atende, em %. Se você é sozinho(a), geralmente é 0 — o que sobra é seu pró-labore." faq="comissao-parceiros" />
               <CampoPct label="Taxa de cartão/Pix" value={taxaCartaoPct} onChange={setTaxaCartaoPct}
-                ajuda="A taxa que a maquininha ou o banco cobra em cima da venda. Confira no seu extrato — deixar em 0 faz o preço vir mais barato do que deveria." />
+                ajuda="A taxa que a maquininha ou o banco cobra em cima da venda. Confira no seu extrato — deixar em 0 faz o preço vir mais barato do que deveria." faq="markup-divisor" />
             </div>
             {N(taxaCartaoPct) === 0 && (
               <p className="text-[11px] -mt-2 flex items-start gap-1" style={{ color: t.warningText }}>
@@ -3276,7 +3391,7 @@ function Calculadora({ nd, negocioConfigurado, irParaNegocio, servicos, onSalvar
               </p>
             )}
             <CampoPct label="Margem de lucro desejada (meta)" value={margemPct} onChange={setMargemPct}
-              ajuda="Quanto você quer que sobre de lucro de verdade, depois de pagar tudo — não é o preço final, é a fatia que fica com você." />
+              ajuda="Quanto você quer que sobre de lucro de verdade, depois de pagar tudo — não é o preço final, é a fatia que fica com você." faq="margem-contribuicao" />
 
             {modo === "ja-tenho" && (
               <Campo label="Preço cobrado pelo serviço (R$)" hint="O que você já cobra hoje, ou pretende cobrar.">
@@ -3507,9 +3622,9 @@ function Calculadora({ nd, negocioConfigurado, irParaNegocio, servicos, onSalvar
             <div className="space-y-4 fade-up">
               <div className="grid grid-cols-2 gap-2">
                 <CampoPct label="Comissão do profissional" value={comissaoPct} onChange={setComissaoPct}
-                  ajuda="Quanto do preço desse serviço vai pro profissional que atende, em %. Se você é sozinho(a), geralmente é 0 — o que sobra é seu pró-labore." />
+                  ajuda="Quanto do preço desse serviço vai pro profissional que atende, em %. Se você é sozinho(a), geralmente é 0 — o que sobra é seu pró-labore." faq="comissao-parceiros" />
                 <CampoPct label="Taxa de cartão/Pix" value={taxaCartaoPct} onChange={setTaxaCartaoPct}
-                  ajuda="A taxa que a maquininha ou o banco cobra em cima da venda. Confira no seu extrato — deixar em 0 faz o preço vir mais barato do que deveria." />
+                  ajuda="A taxa que a maquininha ou o banco cobra em cima da venda. Confira no seu extrato — deixar em 0 faz o preço vir mais barato do que deveria." faq="markup-divisor" />
               </div>
               {N(taxaCartaoPct) === 0 && (
                 <p className="text-[11px] -mt-2 flex items-start gap-1" style={{ color: t.warningText }}>
@@ -3519,7 +3634,7 @@ function Calculadora({ nd, negocioConfigurado, irParaNegocio, servicos, onSalvar
               )}
               {modo === "descobrir" ? (
                 <CampoPct label="Margem de lucro desejada (meta)" value={margemPct} onChange={setMargemPct}
-                  ajuda="Quanto você quer que sobre de lucro de verdade, depois de pagar tudo — não é o preço final, é a fatia que fica com você." />
+                  ajuda="Quanto você quer que sobre de lucro de verdade, depois de pagar tudo — não é o preço final, é a fatia que fica com você." faq="margem-contribuicao" />
               ) : (
                 <>
                   <Campo label="Preço cobrado pelo serviço (R$)" hint="O que você já cobra hoje, ou pretende cobrar.">
@@ -3987,7 +4102,7 @@ function Painel({ nd, negocio, servicos, onRemoverServico, onEditarServico }) {
 
       <div className="conteudo-normal-painel">
       <div id="area-impressao">
-      <p className="text-[11px] -mb-1" style={{ color: t.textMuted }}>
+      <p className="text-[11px]" style={{ color: t.textMuted }}>
         Recalculado com as configurações atuais do Negócio — mude um custo fixo ou o regime tributário e tudo aqui se atualiza sozinho.
       </p>
       <DRECard dre={dre} />
@@ -4281,7 +4396,11 @@ function MemorialCalculo({ negocio, nd, dre, peContabilRS, peFinanceiroRS, peEco
   );
 }
 
-function DRECard({ dre }) {
+/* `origem`: "projecao" (Painel — recalculado ao vivo com a configuração de  */
+/* hoje), "real" (Fechamento — números registrados daquele mês, que não    */
+/* mudam se a configuração mudar depois) ou "exemplo" (mês ilustrativo do  */
+/* botão "carregar exemplo" — nunca pode aparecer como dado real).         */
+function DRECard({ dre, origem = "projecao", mesLabel }) {
   const t = useT();
   const linhas = [
     { label: "Receita bruta", valor: dre.receitaBruta, forte: true },
@@ -4294,13 +4413,32 @@ function DRECard({ dre }) {
   ];
   return (
     <div className="rounded-2xl p-5" style={{ background: t.surface, border: `1px solid ${t.border}`, boxShadow: t.shadow }}>
-      <p className="text-sm font-semibold mb-3" style={{ color: t.text }}>DRE gerencial do mês</p>
+      <div className="flex items-start justify-between gap-2 flex-wrap mb-1">
+        <p className="text-sm font-semibold" style={{ color: t.text }}>
+          {origem !== "projecao" && mesLabel ? `DRE de ${mesLabel}` : "DRE gerencial do mês"}
+          <Ajuda faq="dre" texto="O resultado do mês em ordem: quanto entrou, quanto foi de imposto, de custo de cada atendimento e de conta fixa, e o que sobrou no fim." />
+        </p>
+        {origem === "real" && <Selo tipo="real">dado real{mesLabel ? ` de ${mesLabel}` : ""}</Selo>}
+        {origem === "exemplo" && <Selo tipo="aguardando">exemplo ilustrativo, não é dado real</Selo>}
+        {origem === "projecao" && <Selo tipo="calculado">projeção com a configuração de hoje</Selo>}
+      </div>
+      {origem === "real" && (
+        <p className="text-[11px] mb-3" style={{ color: t.textMuted }}>
+          Números do fechamento que você registrou. Não mudam se você alterar custos, preços ou regime depois.
+        </p>
+      )}
+      {origem === "exemplo" && (
+        <p className="text-[11px] mb-3" style={{ color: t.textMuted }}>
+          Mês criado pelo botão de exemplo, só para mostrar como o gráfico e o DRE funcionam. Exclua quando registrar seus meses reais.
+        </p>
+      )}
+      {origem === "projecao" && <div className="mb-2" />}
       <div className="space-y-1.5">
         {linhas.map((l) => (
           <div key={l.label} className="flex items-center justify-between py-1"
             style={{ borderTop: l.sub || l.forte ? `1px solid ${t.border}` : "none" }}>
-            <span className={"text-sm " + (l.forte ? "font-semibold" : "")} style={{ color: l.sub || l.forte ? t.text : t.textMuted }}>{l.label}</span>
-            <span className={"font-num text-sm " + (l.forte ? "font-bold" : "font-medium")}
+            <span className={"text-sm min-w-0 " + (l.forte ? "font-semibold" : "")} style={{ color: l.sub || l.forte ? t.text : t.textMuted }}>{l.label}</span>
+            <span className={"font-num text-sm shrink-0 whitespace-nowrap pl-3 " + (l.forte ? "font-bold" : "font-medium")}
               style={{ color: l.valor < 0 && !l.forte && !l.sub ? t.danger : t.text }}>
               {fmtBRL(l.valor)}
             </span>
@@ -4835,7 +4973,7 @@ function FechamentoMensal({ nd, servicos, fechamentos, onSalvar, onRemover, onCa
               </div>
               {verDRE === chaveAtual && (
                 <div className="pop-in mt-3">
-                  <DRECard dre={montarDREMensal(fechamentoAtual)} />
+                  <DRECard dre={montarDREMensal(fechamentoAtual)} origem={fechamentoAtual.exemplo ? "exemplo" : "real"} mesLabel={labelMes(chaveAtual)} />
                   {fechamentoAtual.custosVariaveisReaisInformados == null && (
                     <p className="text-[10px] mt-1.5" style={{ color: t.textMuted }}>Custo variável não foi detalhado por serviço neste mês — aparece como R$ 0,00 no DRE acima.</p>
                   )}
@@ -4878,7 +5016,7 @@ function FechamentoMensal({ nd, servicos, fechamentos, onSalvar, onRemover, onCa
                     </div>
                     {verDRE === f.mes && (
                       <div className="pop-in mt-2">
-                        <DRECard dre={montarDREMensal(f)} />
+                        <DRECard dre={montarDREMensal(f)} origem={f.exemplo ? "exemplo" : "real"} mesLabel={labelMes(f.mes)} />
                         {f.custosVariaveisReaisInformados == null && (
                           <p className="text-[10px] mt-1.5" style={{ color: t.textMuted }}>Custo variável não foi detalhado por serviço neste mês — aparece como R$ 0,00 no DRE acima.</p>
                         )}
@@ -5532,6 +5670,18 @@ function Observatorio() {
         </div>
       </div>
 
+      <div className="flex gap-2 items-start rounded-xl p-3 text-xs" style={{ background: t.surfaceAlt, color: t.textMuted }}>
+        <CalendarCheck size={14} className="mt-0.5 shrink-0" />
+        <span>
+          <strong style={{ color: t.text }}>Retrato de uma coleta única</strong>, feita
+          {COLETA_ESTABELECIMENTOS.data
+            ? ` em ${new Date(COLETA_ESTABELECIMENTOS.data + "T12:00:00").toLocaleDateString("pt-BR")}`
+            : ` até ${COLETA_ESTABELECIMENTOS.limiteComprovado}`}
+          {" "}em {COLETA_ESTABELECIMENTOS.fonte}. A lista não se atualiza sozinha: estabelecimentos podem ter aberto,
+          fechado ou mudado de avaliação desde então.
+        </span>
+      </div>
+
       <div className="grid sm:grid-cols-2 gap-3">
         {lista.map((e) => (
           <div key={e.nome} className="fade-up rounded-xl p-4" style={cardStyle}>
@@ -5792,10 +5942,91 @@ function BlocoResposta({ bloco }) {
   return <p className="text-sm leading-relaxed mb-2 last:mb-0" style={{ color: t.textMuted }}>{bloco.texto}</p>;
 }
 
-function FaqItem({ pergunta, blocos, aberto, onToggle }) {
+function encontrarPerguntaFaq(id) {
+  for (const c of FAQ_DADOS) {
+    const p = c.perguntas.find((q) => q.id === id);
+    if (p) return { ...p, categoria: c.categoria };
+  }
+  return null;
+}
+
+/* Explicação completa de uma pergunta do FAQ, aberta a partir de uma dica  */
+/* "?" — por cima da tela atual, sem trocar de aba. Trocar de aba descarta  */
+/* o que ainda não foi salvo (rascunho de serviço, últimos segundos do      */
+/* Negócio), então o usuário lê e volta exatamente de onde estava.          */
+/* Celular: sobe de baixo (bottom sheet). Telas maiores: centralizado.      */
+function PainelExplicacao({ faqId, onFechar, onVerFaq }) {
+  const t = useT();
+  const pergunta = encontrarPerguntaFaq(faqId);
+  const [saindo, setSaindo] = useState(false);
+  const fecharRef = useRef(null);
+  const focoAnteriorRef = useRef(null);
+
+  const fechar = useCallback((depois) => {
+    setSaindo(true);
+    const reduzido = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    setTimeout(() => {
+      onFechar();
+      if (typeof depois === "function") depois();
+      else focoAnteriorRef.current?.focus?.();
+    }, reduzido ? 0 : 180);
+  }, [onFechar]);
+
+  useEffect(() => {
+    focoAnteriorRef.current = document.activeElement;
+    fecharRef.current?.focus();
+    const onKey = (e) => { if (e.key === "Escape") fechar(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [fechar]);
+
+  if (!pergunta) return null;
+  return (
+    <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center no-print">
+      <div
+        className={saindo ? "backdrop-out" : "backdrop-in"} onClick={() => fechar()} aria-hidden="true"
+        style={{ position: "absolute", inset: 0, background: "rgba(10, 14, 26, .45)", touchAction: "none" }}
+      />
+      <div
+        role="dialog" aria-modal="true" aria-labelledby="painel-explicacao-titulo"
+        className={(saindo ? "sheet-out" : "sheet-in") + " relative w-full sm:max-w-lg sm:mx-4 rounded-t-2xl sm:rounded-2xl flex flex-col"}
+        style={{ background: t.surface, border: `1px solid ${t.border}`, boxShadow: t.shadow, maxHeight: "82dvh" }}
+      >
+        <div className="sm:hidden flex justify-center pt-2" aria-hidden="true">
+          <span style={{ width: 36, height: 4, borderRadius: 4, background: t.border }} />
+        </div>
+        <div className="flex items-start justify-between gap-3 px-5 pt-3 sm:pt-5 pb-3" style={{ borderBottom: `1px solid ${t.border}` }}>
+          <div className="min-w-0">
+            <p className="text-[11px] font-medium inline-flex items-center gap-1" style={{ color: t.primaryText }}>
+              <HelpCircle size={12} /> {pergunta.categoria}
+            </p>
+            <p id="painel-explicacao-titulo" className="text-sm font-semibold mt-1" style={{ color: t.text }}>{pergunta.pergunta}</p>
+          </div>
+          <button ref={fecharRef} type="button" onClick={() => fechar()} aria-label="Fechar explicação"
+            className="btn-press touch-target shrink-0 rounded-full p-1.5" style={{ background: t.surfaceAlt, color: t.textMuted }}>
+            <X size={14} />
+          </button>
+        </div>
+        <div className="px-5 py-4 overflow-y-auto" style={{ overscrollBehavior: "contain" }}>
+          {pergunta.blocos.map((bloco, i) => <BlocoResposta key={i} bloco={bloco} />)}
+        </div>
+        <div className="flex items-center justify-between gap-3 px-5 py-3" style={{ borderTop: `1px solid ${t.border}`, paddingBottom: "calc(.75rem + env(safe-area-inset-bottom))" }}>
+          <button type="button" onClick={() => fechar(onVerFaq)} className="btn-press text-xs font-medium underline underline-offset-2" style={{ color: t.textMuted }}>
+            Ver todas as perguntas
+          </button>
+          <button type="button" onClick={() => fechar()} className="btn-press rounded-xl px-4 py-2 text-xs font-semibold" style={{ background: t.primary, color: t.onPrimary }}>
+            Entendi, voltar
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function FaqItem({ id, pergunta, blocos, aberto, onToggle, destaque }) {
   const t = useT();
   return (
-    <div className="fade-up rounded-xl" style={{ background: t.surface, border: `1px solid ${t.border}`, boxShadow: t.shadow, overflow: "hidden" }}>
+    <div id={id ? `faq-${id}` : undefined} className="fade-up rounded-xl" style={{ background: t.surface, border: `1px solid ${destaque ? t.primary : t.border}`, boxShadow: t.shadow, overflow: "hidden", transition: "border-color .6s ease", scrollMarginTop: 80 }}>
       <button
         onClick={onToggle} aria-expanded={aberto}
         className="btn-press touch-target flex items-center justify-between w-full text-left px-4 py-3.5 gap-3"
@@ -5812,11 +6043,26 @@ function FaqItem({ pergunta, blocos, aberto, onToggle }) {
   );
 }
 
-function Faq() {
+function Faq({ alvo } = {}) {
   const t = useT();
   const [busca, setBusca] = useState("");
   const [categoriaAtiva, setCategoriaAtiva] = useState("Todos");
-  const [abertos, setAbertos] = useState({});
+  const [abertos, setAbertos] = useState(() => (alvo?.id ? { [alvo.id]: true } : {}));
+  const [destaque, setDestaque] = useState(alvo?.id || null);
+
+  // Chegou aqui por "Ver todas as perguntas" de uma explicação: a pergunta
+  // já vem aberta, a tela rola até ela e a borda fica destacada por instantes.
+  useEffect(() => {
+    if (!alvo?.id) return undefined;
+    setAbertos((prev) => ({ ...prev, [alvo.id]: true }));
+    setDestaque(alvo.id);
+    const reduzido = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    const rolar = setTimeout(() => {
+      document.getElementById(`faq-${alvo.id}`)?.scrollIntoView({ behavior: reduzido ? "auto" : "smooth", block: "start" });
+    }, 60);
+    const apagar = setTimeout(() => setDestaque(null), 2200);
+    return () => { clearTimeout(rolar); clearTimeout(apagar); };
+  }, [alvo]);
 
   const toggle = (id) => setAbertos((prev) => ({ ...prev, [id]: !prev[id] }));
 
@@ -5880,7 +6126,7 @@ function Faq() {
               </div>
               <div className="space-y-2">
                 {grupo.perguntas.map((p) => (
-                  <FaqItem key={p.id} pergunta={p.pergunta} blocos={p.blocos} aberto={!!abertos[p.id]} onToggle={() => toggle(p.id)} />
+                  <FaqItem key={p.id} id={p.id} pergunta={p.pergunta} blocos={p.blocos} aberto={!!abertos[p.id]} onToggle={() => toggle(p.id)} destaque={destaque === p.id} />
                 ))}
               </div>
             </div>
