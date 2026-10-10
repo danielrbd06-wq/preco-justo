@@ -52,9 +52,9 @@ Antes de finalizar, revise a interface como **designer de produto sênior** e co
 
 ## 4. Arquitetura atual
 
-- **React 18 + Vite 5 + Tailwind CSS 3**, gráficos com **Recharts**, ícones **lucide-react**, exportação Excel com **xlsx**.
+- **React 18 + Vite 5 + Tailwind CSS 3**, gráficos com **Recharts**, ícones **lucide-react**, exportação Excel com **xlsx**, mapa com **Leaflet** 1.9.4 sobre o **OpenStreetMap**.
 - PWA via **vite-plugin-pwa** (instalável, funciona offline).
-- Código principal em um único arquivo: `src/App.jsx` (~6.300 linhas), com componentes reutilizáveis definidos no próprio arquivo.
+- Código principal em um único arquivo: `src/App.jsx` (~7.500 linhas), com componentes reutilizáveis definidos no próprio arquivo. Exceção: `src/MapaConcorrencia.jsx`, carregado sob demanda (`React.lazy`) para o Leaflet não pesar no resto do app.
 - Persistência: `window.storage` com fallback para `localStorage` (`listarComFallback()`), tudo no dispositivo do usuário.
 - Autenticação com Supabase: **pausada** (não está em uso nesta versão).
 - Deploy: **Vercel**, conectada a este repositório (push na `main` = deploy; cada PR ganha URL de preview).
@@ -70,7 +70,7 @@ As melhorias foram organizadas em **7 blocos**, um PR por bloco, por ordem de ri
 | 3 | Fator R/Anexo em linguagem natural (padrão semáforo); escada dos 3 pontos de equilíbrio com margem de segurança; leitura de valores no padrão brasileiro (Issue #11); percentuais com vírgula | ✅ Implementado (`docs/bloco-3-issues-e-pr.md`) |
 | 4 | Comissão média da equipe ponderada pelos atendimentos; aluguel de cadeira nos dois lados (dono recebe: receita; profissional que aluga: custo fixo ou % por serviço) | ✅ Implementado (`docs/bloco-4-issues-e-pr.md`) |
 | 5 | Taxa média de recebimento: formas de pagamento no Negócio (dinheiro, Pix, débito, crédito à vista e parcelado) com média ponderada, usada por serviço como a comissão média; ajustes visuais da Calculadora | ✅ Implementado (`docs/bloco-5-issues-e-pr.md`) |
-| 6 | Benchmarking regional agregado e mapa (Leaflet + OpenStreetMap) | Pendente |
+| 6 | Observatório: mapa da concorrência (Leaflet + OpenStreetMap) em Feira de Santana, Irará e Salvador, com marcação por toque; preços dos concorrentes anotados pelo usuário e comparação com os preços dele (mediana, faixa e piso), com raio de distância | ✅ Implementado (`docs/bloco-6-issues-e-pr.md`) |
 | 7 | Polimento visual (decidido com o Daniel): quebra de linha equilibrada (`text-wrap`), largura máxima de linha, rótulos sem vão ao quebrar, seções do Negócio sem linhas divisórias redundantes, títulos de seção sem corte, selos longos como nota de rodapé | ✅ Implementado (`docs/bloco-7-issue-e-pr.md`) |
 
 ### Regras de tipografia e espaçamento (Bloco 7)
@@ -104,11 +104,22 @@ As melhorias foram organizadas em **7 blocos**, um PR por bloco, por ordem de ri
 - Crédito parcelado é uma linha só, com a taxa média já somada à da antecipação, quando houver (decisão com o Daniel). Mensalidade ou aluguel da maquininha é custo fixo, não entra na taxa.
 - Seleção "média ou própria" e a caixa "de onde a média saiu" são componentes compartilhados: **`SeletorOrigem`** e **`ComposicaoMedia`**. Use-os para qualquer novo valor médio do negócio que um serviço possa adotar.
 
+### Observatório: mapa e preços da concorrência (Bloco 6)
+- **Os preços dos concorrentes são anotados pelo próprio usuário**, sempre com data e "onde viu" (decisão com o Daniel). O app não traz nem estima preço de concorrente. Nada de dados de exemplo no Observatório.
+- **Posição no mapa só por toque do usuário.** A coleta de referência (`ESTABELECIMENTOS_REAIS`) não tem coordenadas e não é plotada: cada item tem "marcar no mapa", que cria um concorrente com nome, tipo e bairro já preenchidos. Não foi encontrada fonte confiável para coordenadas de bairros; não invente.
+- Cidades: `CIDADES_OBSERVATORIO` (Feira de Santana, Irará — cidade de testes do app — e Salvador). O centro de cada cidade só posiciona a vista inicial (coordenadas da Wikipédia).
+- Armazenamento local: `observatorio:concorrentes` (lista de `{ id, cidade, nome, tipo, bairro, lat, lng, precos: [{ id, servicoId, servicoNome, valor, data, fonte }] }`) e `observatorio:meus-locais` (`{ [cidade]: { lat, lng } }`).
+- Comparação por serviço: só o **preço mais recente de cada concorrente** (`ultimoPrecoPorConcorrente`), **mediana** em vez de média, faixa mín.–máx. e o **piso** do serviço (`pisoDoServico`: preço com margem 0). Avisos: menos de 3 observações; preços com mais de 180 dias; mediana abaixo do piso.
+- Com o local do negócio marcado, o filtro de raio (1, 3 ou 5 km, haversine) vale para o mapa e para a comparação.
+- Tiles do OpenStreetMap: atribuição obrigatória (já no mapa) e uso moderado, pela política de uso dos tiles. Sem internet, as ruas não carregam; a lista e a comparação continuam funcionando. Se o uso crescer muito, trocar por um provedor de tiles com plano próprio.
+- O mapa fica num contexto de empilhamento próprio (`z-index: 0`) para os painéis do Leaflet não cobrirem a barra de navegação e os balões do app. No tema escuro, os tiles são invertidos por CSS.
+
 ### Formatação e leitura de números (padrão brasileiro)
 - Exibição: `fmtBRL` (R$ 2.500,00) e `fmtPct` (6,00%), sempre com vírgula decimal.
 - Entrada: **todo campo em que o usuário digita valor deve passar por `normalizarValorBR`**. Ele entende "2.500", "2.500,00", "1.234.567" e "2500,50". Ler direto com `Number()` ou trocar só a vírgula por ponto grava "2.500" como R$ 2,50.
 
 ### Pendências e achados para virar Issue
+- **[Nova função — futuro]** Média anônima de preços entre usuários do app, por bairro. Exige servidor, consentimento, termos de uso e política de privacidade aprovados pelo jurídico (LGPD) e um número mínimo de negócios por grupo para não identificar ninguém. Adiada por decisão do Daniel no Bloco 6.
 - **[Dado]** A data exata da coleta dos estabelecimentos do Observatório não foi registrada. A tela mostra "até agosto de 2026" (limite comprovado pelo build de 16/08/2026). Ao refazer a coleta, preencher `COLETA_ESTABELECIMENTOS.data` em `src/App.jsx`.
 - **[Tributário — confirmar com contador]** Lei do Salão-Parceiro (Lei 13.352/2016): no contrato de parceria, a cota-parte repassada ao profissional-parceiro não integra a receita bruta do salão-parceiro. O app ainda trata o preço inteiro do serviço como receita do salão (e calcula o imposto sobre ele), o que superestima o imposto de quem usa esse contrato. Vale um bloco próprio, com validação de um contador.
 - **[Melhoria]** O app baixa a versão nova em segundo plano, mas não avisa: quem abre pelo ícone da tela inicial pode ver a versão anterior até reabrir. Mostrar "Nova versão disponível — toque para atualizar".
