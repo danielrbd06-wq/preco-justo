@@ -8,8 +8,11 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
-      registerType: "autoUpdate",
-      injectRegister: "script",
+      // Bloco 9: "prompt" em vez de "autoUpdate". A versão nova é baixada em segundo
+      // plano e o app mostra "Nova versão disponível"; quem decide a hora de trocar é
+      // a pessoa (componente AvisoNovaVersao, via virtual:pwa-register/react).
+      registerType: "prompt",
+      injectRegister: false,
       includeAssets: ["favicon-32.png", "apple-touch-icon.png"],
       manifest: {
         name: "Preço Justo — Precificação e Gestão",
@@ -36,7 +39,7 @@ export default defineConfig({
     include: ["src/**/*.test.js"],
     environment: "node",
     coverage: {
-      provider: "v8", include: ["src/calculos.js"], reporter: ["text", "text-summary"],
+      provider: "v8", include: ["src/calculos.js", "src/copiaSeguranca.js"], reporter: ["text", "text-summary"],
       // Piso de cobertura: uma conta nova sem teste derruba a verificação.
       thresholds: { lines: 85, functions: 80 },
     },

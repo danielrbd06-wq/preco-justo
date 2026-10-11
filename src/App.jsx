@@ -13,6 +13,8 @@ import {
 } from "lucide-react";
 import { createPortal } from "react-dom";
 import * as XLSX from "xlsx";
+import { useRegisterSW } from "virtual:pwa-register/react";
+import { montarCopia, lerCopia, nomeArquivoCopia } from "./copiaSeguranca.js";
 import {
   fmtBRL, fmtPct, N, normalizarValorBR, ANEXO_III, ANEXO_V,
   aliquotaEfetiva, VINCULOS_PROFISSIONAL, vinculoDe, calcularComissaoEquipe, comissaoEfetiva, FORMAS_PAGAMENTO,
@@ -174,6 +176,22 @@ async function listarComFallback(prefixo) {
     (r?.keys || []).forEach((k) => chaves.add(k));
   } catch { /* window.storage só existe dentro do Claude — fora dele, o cache local acima já resolve */ }
   return Array.from(chaves);
+}
+
+/* Bloco 9: evento disparado antes de o app recarregar para a versão nova e  */
+/* antes de baixar a cópia de segurança. Quem tem algo esperando para ser    */
+/* salvo escuta e salva na hora.                                             */
+const EVENTO_SALVAR_PENDENTES = "preco-justo:salvar-pendentes";
+
+/* Rascunhos (Bloco 9): o que está sendo digitado num formulário que ainda   */
+/* não foi salvo (serviço novo, fechamento do mês) fica guardado no          */
+/* aparelho, para sobreviver à troca de aba, ao recarregar e à atualização. */
+const CHAVE_RASCUNHO_SERVICO = "rascunho:servico-novo";
+const chaveRascunhoFechamento = (mes) => `rascunho:fechamento:${mes}`;
+async function lerRascunho(chave) {
+  const texto = await lerComFallback(chave);
+  if (!texto) return null;
+  try { return JSON.parse(texto); } catch { return null; }
 }
 
 const MESES = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
@@ -587,6 +605,63 @@ function Selo({ tipo, children }) {
 }
 
 /* ======================================================================= */
+/* Aviso de nova versão (Bloco 9). O app baixa a versão nova em segundo      */
+/* plano e, em vez de trocar sozinho na próxima abertura (o que deixava     */
+/* quem abre pelo ícone preso na versão anterior sem saber), avisa e deixa  */
+/* a pessoa escolher a hora. Antes de recarregar, avisa os formulários para */
+/* salvarem o que estiver pendente. Procura versão nova a cada 30 minutos e */
+/* sempre que o app volta para a tela.                                      */
+/* ======================================================================= */
+function AvisoNovaVersao() {
+  const t = useT();
+  const [atualizando, setAtualizando] = useState(false);
+  const [adiado, setAdiado] = useState(false);
+  const { needRefresh: [precisaAtualizar], updateServiceWorker } = useRegisterSW({
+    onRegisteredSW(_url, registro) {
+      if (!registro) return;
+      const verificar = () => { if (navigator.onLine !== false) registro.update().catch(() => {}); };
+      setInterval(verificar, 30 * 60 * 1000);
+      document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") verificar(); });
+    },
+  });
+  if (!precisaAtualizar || adiado) return null;
+  const atualizar = () => {
+    setAtualizando(true);
+    window.dispatchEvent(new Event(EVENTO_SALVAR_PENDENTES));
+    // Dá um instante para os salvamentos terminarem antes de recarregar.
+    setTimeout(() => updateServiceWorker(true), 300);
+  };
+  return (
+    <div role="status" aria-live="polite"
+      className="pop-in no-print fixed z-[60] left-4 right-4 bottom-[88px] sm:left-auto sm:right-6 sm:bottom-6 sm:w-[380px] rounded-2xl p-4 flex items-start gap-3"
+      style={{ background: t.surface, border: `1px solid ${t.border}`, boxShadow: "0 12px 32px rgba(15,23,42,.18)" }}>
+      <span className="shrink-0 rounded-full flex items-center justify-center" style={{ width: 32, height: 32, background: t.primarySoft, color: t.primaryText }}>
+        <Sparkles size={16} />
+      </span>
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-semibold" style={{ color: t.text }}>Nova versão disponível</p>
+        <p className="text-xs mt-0.5" style={{ color: t.textMuted }}>
+          Atualize para ter as últimas melhorias. O que você digitou fica salvo.
+        </p>
+        <div className="flex gap-2 mt-2.5">
+          <button type="button" onClick={atualizar} disabled={atualizando}
+            className="btn-press touch-target inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold"
+            style={{ background: t.primaryText, color: t.onPrimary, opacity: atualizando ? 0.8 : 1 }}>
+            {atualizando && <span className="inline-block w-3 h-3 rounded-full border-2 border-current border-r-transparent animate-spin" aria-hidden="true" />}
+            {atualizando ? "Atualizando…" : "Atualizar agora"}
+          </button>
+          {!atualizando && (
+            <button type="button" onClick={() => setAdiado(true)} className="btn-press touch-target rounded-lg px-3 py-2 text-xs font-medium" style={{ color: t.textMuted }}>
+              Depois
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ======================================================================= */
 /* Skeleton / Toast                                                        */
 /* ======================================================================= */
 function SkeletonBlock({ h = 16, w = "100%", radius = 8 }) {
@@ -629,7 +704,7 @@ function useToast() {
 /* ======================================================================= */
 /* App                                                                      */
 /* ======================================================================= */
-const VERSAO_APP = "v7.15";
+const VERSAO_APP = "v7.16";
 const CHAVE_TEMA = "preco-justo:tema";
 
 /* Rede de segurança: se qualquer aba travar por um motivo que eu não       */
@@ -789,6 +864,7 @@ function App({ onSair, nomeEstabelecimento } = {}) {
   return (
     <ThemeCtx.Provider value={t}>
     <FaqLinkContext.Provider value={setExplicacaoFaq}>
+      <AvisoNovaVersao />
       {/* 100dvh em vez de 100vh: no mobile, 100vh é calculado com a barra de endereço do  */}
       {/* navegador ESCONDIDA (o maior viewport possível) — não com o que está realmente  */}
       {/* visível. Como a barra de baixo é fixed;bottom:0, ela ficava posicionada relativa */}
@@ -1518,6 +1594,146 @@ function FormasPagamento({ recebimento, onChange }) {
   );
 }
 
+/* Cópia de segurança (Bloco 9): baixar um arquivo com todos os dados do app */
+/* e restaurar a partir dele. Os dados só existem neste aparelho; sem cópia, */
+/* limpar os dados do navegador ou trocar de celular apaga tudo.             */
+function CopiaSeguranca({ soRestaurar = false }) {
+  const t = useT();
+  const { show, node: toastNode } = useToast();
+  const [ultima, setUltima] = useState(null);
+  const [baixando, setBaixando] = useState(false);
+  const [lida, setLida] = useState(null); // resultado de lerCopia, aguardando confirmação
+  const [erro, setErro] = useState(null);
+  const [restaurando, setRestaurando] = useState(false);
+  const inputRef = useRef(null);
+
+  useEffect(() => { lerComFallback("app:ultima-copia").then((v) => setUltima(v || null)); }, []);
+
+  const baixar = async () => {
+    setBaixando(true); setErro(null);
+    window.dispatchEvent(new Event(EVENTO_SALVAR_PENDENTES));
+    await new Promise((r) => setTimeout(r, 150));
+    const agora = new Date();
+    salvarComFallback("app:ultima-copia", agora.toISOString());
+    const chaves = (await listarComFallback("")).sort();
+    const dados = {};
+    for (const chave of chaves) {
+      const valor = await lerComFallback(chave);
+      if (typeof valor === "string") dados[chave] = valor;
+    }
+    const blob = new Blob([JSON.stringify(montarCopia(dados, { versaoApp: VERSAO_APP, agora }), null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = nomeArquivoCopia(agora);
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    setUltima(agora.toISOString());
+    setBaixando(false);
+    show("Cópia baixada. Guarde o arquivo num lugar seguro.");
+  };
+
+  const escolherArquivo = async (e) => {
+    const arquivo = e.target.files?.[0];
+    e.target.value = "";
+    if (!arquivo) return;
+    setErro(null);
+    const r = lerCopia(await arquivo.text());
+    if (!r.ok) { setErro(r.erro); setLida(null); return; }
+    setLida(r);
+  };
+
+  const restaurar = async () => {
+    setRestaurando(true);
+    // Apaga só o que não está na cópia; o resto é sobrescrito logo abaixo.
+    const atuais = await listarComFallback("");
+    atuais.filter((chave) => !(chave in lida.dados)).forEach((chave) => excluirComFallback(chave));
+    Object.entries(lida.dados).forEach(([chave, valor]) => salvarComFallback(chave, valor));
+    setTimeout(() => window.location.reload(), 400);
+  };
+
+  const fmtData = (iso) => (iso ? new Date(iso).toLocaleDateString("pt-BR") : "");
+  const resumo = lida?.resumo;
+  const partes = resumo ? [
+    resumo.temNegocio && "negócio configurado",
+    resumo.servicos > 0 && `${resumo.servicos} serviço${resumo.servicos > 1 ? "s" : ""}`,
+    resumo.fechamentos > 0 && `${resumo.fechamentos} fechamento${resumo.fechamentos > 1 ? "s" : ""} do mês`,
+    resumo.produtos > 0 && `${resumo.produtos} produto${resumo.produtos > 1 ? "s" : ""}`,
+    resumo.concorrentes > 0 && `${resumo.concorrentes} concorrente${resumo.concorrentes > 1 ? "s" : ""}`,
+  ].filter(Boolean) : [];
+
+  const inputArquivo = (
+    <input ref={inputRef} type="file" accept="application/json,.json" className="hidden" onChange={escolherArquivo} aria-label="Arquivo da cópia de segurança" />
+  );
+  const avisoErro = erro && (
+    <div className="pop-in flex gap-2 items-start rounded-xl p-2.5 mt-2 text-xs" role="alert" style={{ background: t.dangerSoft, color: t.danger }}>
+      <AlertTriangle size={14} className="mt-0.5 shrink-0" /><span>{erro}</span>
+    </div>
+  );
+  const confirmacao = lida && (
+    <div className="pop-in rounded-xl p-3 mt-2 text-xs space-y-2 text-left" style={{ background: t.warningSoft, color: t.warningText }}>
+      <p className="font-semibold">
+        Cópia de {fmtData(lida.criadaEm) || "data desconhecida"}{lida.versaoApp ? ` (versão ${lida.versaoApp})` : ""}
+      </p>
+      <p style={{ color: t.text }}>Contém: {partes.length > 0 ? partes.join(", ") : "dados do app"}.</p>
+      <p>Restaurar <b>substitui todos os dados atuais deste aparelho</b> pelos da cópia. Se quiser guardar os atuais, baixe uma cópia antes.</p>
+      <div className="flex gap-3">
+        <button type="button" onClick={restaurar} disabled={restaurando}
+          className="btn-press touch-target inline-flex items-center gap-1.5 rounded-lg px-3 py-2 font-semibold"
+          style={{ background: t.danger, color: t.onDanger }}>
+          {restaurando && <span className="inline-block w-3 h-3 rounded-full border-2 border-current border-r-transparent animate-spin" aria-hidden="true" />}
+          {restaurando ? "Restaurando…" : "Sim, restaurar"}
+        </button>
+        {!restaurando && (
+          <button type="button" onClick={() => setLida(null)} className="btn-press touch-target underline" style={{ color: t.textMuted }}>Cancelar</button>
+        )}
+      </div>
+    </div>
+  );
+
+  // No primeiro acesso (aparelho novo ou dados apagados): só restaurar.
+  if (soRestaurar) {
+    return (
+      <div className="mt-3 text-center">
+        <button type="button" onClick={() => inputRef.current?.click()} disabled={restaurando}
+          className="btn-press touch-target text-xs underline underline-offset-2" style={{ color: t.textMuted }}>
+          Já usa o app em outro aparelho? Restaure uma cópia de segurança
+        </button>
+        {inputArquivo}
+        {avisoErro}
+        {confirmacao}
+      </div>
+    );
+  }
+
+  return (
+    <SecaoColapsavel titulo="Cópia de segurança" icon={ShieldCheck}
+      resumo={ultima ? `última: ${fmtData(ultima)}` : "nenhuma ainda"}
+      ajuda="Seus dados ficam guardados só neste aparelho. A cópia é um arquivo com tudo: dá para guardar e restaurar aqui ou em outro celular ou computador.">
+      <p className="text-[11px] mb-2" style={{ color: t.textMuted }}>
+        Baixe uma cópia de vez em quando, por exemplo depois de cada fechamento do mês, e guarde num lugar seguro (seu
+        e-mail ou Google Drive). O arquivo tem os números do seu negócio: não compartilhe.
+      </p>
+      <div className="flex gap-2 flex-wrap">
+        <button type="button" onClick={baixar} disabled={baixando}
+          className="btn-press touch-target inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold"
+          style={{ background: t.primaryText, color: t.onPrimary, opacity: baixando ? 0.8 : 1 }}>
+          {baixando ? <span className="inline-block w-3 h-3 rounded-full border-2 border-current border-r-transparent animate-spin" aria-hidden="true" /> : <Download size={14} />}
+          {baixando ? "Preparando…" : "Baixar cópia"}
+        </button>
+        <button type="button" onClick={() => inputRef.current?.click()} disabled={restaurando}
+          className="btn-press touch-target inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold"
+          style={{ background: t.surfaceAlt, color: t.text, border: `1px solid ${t.border}` }}>
+          Restaurar de uma cópia
+        </button>
+        {inputArquivo}
+      </div>
+      {avisoErro}
+      {confirmacao}
+      {toastNode}
+    </SecaoColapsavel>
+  );
+}
+
 /* ======================================================================= */
 /* Aba: Negócio                                                            */
 /* ======================================================================= */
@@ -1554,19 +1770,45 @@ function useAutoSalvar(rascunho, valorSalvo, onSalvar, { ativo = true, delayMs =
   const onSalvarRef = useRef(onSalvar);
   rascunhoRef.current = rascunho;
   onSalvarRef.current = onSalvar;
+  const pendenteRef = useRef(false);
+  const ativoRef = useRef(ativo);
+  ativoRef.current = ativo;
   const rascunhoStr = JSON.stringify(rascunho);
   const salvoStr = JSON.stringify(valorSalvo);
 
   useEffect(() => {
-    if (!ativo || rascunhoStr === salvoStr) { setStatus("salvo"); return undefined; }
+    if (!ativo || rascunhoStr === salvoStr) { pendenteRef.current = false; setStatus("salvo"); return undefined; }
+    pendenteRef.current = true;
     setStatus("pendente");
     const timer = setTimeout(() => {
+      pendenteRef.current = false;
       setStatus("salvando");
       onSalvarRef.current(rascunhoRef.current);
       setStatus("salvo");
     }, delayMs);
     return () => clearTimeout(timer);
   }, [rascunhoStr, salvoStr, ativo, delayMs]);
+
+  // Bloco 9: o que ainda esperava a pausa da digitação é salvo na hora ao trocar
+  // de aba (o componente sai da tela), ao esconder ou fechar a página e antes de
+  // o app recarregar para uma versão nova. Antes, isso se perdia.
+  useEffect(() => {
+    const descarregar = () => {
+      if (!pendenteRef.current || !ativoRef.current) return;
+      pendenteRef.current = false;
+      onSalvarRef.current(rascunhoRef.current);
+    };
+    const aoEsconder = () => { if (document.visibilityState === "hidden") descarregar(); };
+    window.addEventListener("pagehide", descarregar);
+    window.addEventListener(EVENTO_SALVAR_PENDENTES, descarregar);
+    document.addEventListener("visibilitychange", aoEsconder);
+    return () => {
+      window.removeEventListener("pagehide", descarregar);
+      window.removeEventListener(EVENTO_SALVAR_PENDENTES, descarregar);
+      document.removeEventListener("visibilitychange", aoEsconder);
+      descarregar();
+    };
+  }, []);
 
   return status;
 }
@@ -1786,6 +2028,7 @@ function Negocio({ negocio, onSalvar, servicos, onCarregarExemplo }) {
       <div className="max-w-lg mx-auto">
         {toastNode}
         <OnboardingPerfil onConcluir={concluirOnboarding} />
+        <CopiaSeguranca soRestaurar />
       </div>
     );
   }
@@ -2176,6 +2419,8 @@ function Negocio({ negocio, onSalvar, servicos, onCarregarExemplo }) {
             </Campo>
           </div>
         </SecaoColapsavel>
+
+        <CopiaSeguranca />
 
         <div className="flex items-center justify-center py-1">
           <IndicadorAutoSalvar status={statusSalvar} />
@@ -3257,10 +3502,41 @@ function Calculadora({ nd, negocioConfigurado, irParaNegocio, servicos, onSalvar
       }
     : vazio, [servicoEmEdicao]);
   const sujo = mostrarFormulario && JSON.stringify(rascunhoAtual) !== JSON.stringify(rascunhoBase);
-  // Só avisa em criação nova (wizard) — editando serviço existente, o auto-save já cobre
-  // isso; "sujo" ficaria permanentemente true depois do 1º auto-save (a prop servicoEmEdicao
-  // não é atualizada com o registro recém-salvo), então usá-lo aqui daria falso positivo.
-  useAvisoNaoSalvo(sujo && !servicoEmEdicao);
+
+  // Rascunho do serviço novo (Bloco 9): o que foi digitado no assistente fica guardado
+  // no aparelho a cada mudança e volta ao reabrir a Calculadora, depois de trocar de
+  // aba, recarregar a página ou atualizar o app. Substitui o aviso do navegador ao sair,
+  // que não protegia a troca de aba. Só guarda quando há algo de fato preenchido.
+  const [rascunhoRecuperado, setRascunhoRecuperado] = useState(false);
+  const rascunhoLidoRef = useRef(false);
+  const temConteudo = !!(nomeServico.trim() || N(atendimentosMes) > 0 || N(precoCobrado) > 0 ||
+    custosVariaveis.some((c) => N(c.valor) > 0 || N(c.valorCompra) > 0));
+  useEffect(() => {
+    if (servicoEmEdicao) { rascunhoLidoRef.current = true; return undefined; }
+    let vivo = true;
+    lerRascunho(CHAVE_RASCUNHO_SERVICO).then((d) => {
+      rascunhoLidoRef.current = true;
+      if (!vivo || !d) return;
+      setModo(d.modo === "ja-tenho" ? "ja-tenho" : "descobrir");
+      setNomeServico(d.nome || ""); setCategoria(d.categoria || ""); setTipo(d.tipo || "servico");
+      if (Array.isArray(d.custosVariaveis)) setCustosVariaveis(d.custosVariaveis);
+      setComissaoPct(d.comissaoPct ?? vazio.comissaoPct); setComissaoModo(d.comissaoModo || "propria");
+      setTaxaCartaoPct(d.taxaCartaoPct ?? vazio.taxaCartaoPct); setTaxaModo(d.taxaModo || "propria");
+      setMargemPct(d.margemPct ?? vazio.margemPct);
+      setAtendimentosMes(d.atendimentosMes ?? ""); setHorasAtendimento(d.horasAtendimento ?? vazio.horasAtendimento);
+      setPrecoCobrado(d.precoCobrado ?? ""); setPrecoCobradoDebounced(d.precoCobrado ?? "");
+      setPrecoSeparadoReferencia(d.precoSeparadoReferencia ?? null);
+      setPassoWizard(Math.min(5, Math.max(1, N(d.passoWizard) || 1)));
+      setMostrarFormulario(true);
+      setRascunhoRecuperado(true);
+    });
+    return () => { vivo = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  useEffect(() => {
+    if (!rascunhoLidoRef.current || servicoEmEdicao || !mostrarFormulario || !temConteudo) return;
+    salvarComFallback(CHAVE_RASCUNHO_SERVICO, JSON.stringify({ ...rascunhoAtual, passoWizard, precoSeparadoReferencia, guardadoEm: Date.now() }));
+  }, [rascunhoAtual, passoWizard, precoSeparadoReferencia, servicoEmEdicao, mostrarFormulario, temConteudo]);
 
   // debounce ~300ms no preço informado, pra não recalcular tudo a cada tecla
   useEffect(() => {
@@ -3305,6 +3581,9 @@ function Calculadora({ nd, negocioConfigurado, irParaNegocio, servicos, onSalvar
     setNomeServico(vazio.nome); setCategoria(vazio.categoria); setTipo(vazio.tipo); setConfirmandoExclusaoForm(false);
     setPrecoCobrado(vazio.precoCobrado); setPrecoCobradoDebounced(vazio.precoCobrado);
     setPrecoSeparadoReferencia(null);
+    // Começar de novo, salvar ou fechar descarta o rascunho guardado.
+    excluirComFallback(CHAVE_RASCUNHO_SERVICO);
+    setRascunhoRecuperado(false);
   };
 
   const abrirNovo = () => { onTerminarEdicao(); resetarFormulario(); setMostrarFormulario(true); };
@@ -3679,6 +3958,21 @@ function Calculadora({ nd, negocioConfigurado, irParaNegocio, servicos, onSalvar
             </button>
           </div>
 
+          {rascunhoRecuperado && (
+            <div className="pop-in flex items-start justify-between gap-2 rounded-xl p-2.5 mb-2 text-xs" role="status"
+              style={{ background: t.successSoft, color: t.successText }}>
+              <span className="flex items-start gap-1.5">
+                <CheckCircle2 size={14} className="mt-0.5 shrink-0" />
+                <span>Recuperamos o serviço que você estava criando. Continue de onde parou.</span>
+              </span>
+              <span className="flex gap-3 shrink-0">
+                <button type="button" onClick={() => setRascunhoRecuperado(false)} className="btn-press touch-target font-semibold underline">Ok</button>
+                <button type="button" onClick={() => { resetarFormulario(); setMostrarFormulario(true); }} className="btn-press touch-target underline" style={{ color: t.textMuted }}>
+                  Começar de novo
+                </button>
+              </span>
+            </div>
+          )}
           <BarraProgressoWizard passo={passoWizard} onIr={setPassoWizard} />
 
           {passoWizard === 1 && (
@@ -4948,6 +5242,36 @@ function FormularioFechamento({ mes, nd, servicos, profissionais, registroExiste
     }));
   });
 
+  // Rascunho do fechamento (Bloco 9): o que foi digitado fica guardado no aparelho
+  // e volta ao reabrir este mês, depois de trocar de aba, recarregar ou atualizar.
+  const chaveRascunho = chaveRascunhoFechamento(mes);
+  const estadoStr = JSON.stringify({ faturamentoBrutoManual, atendimentosTotaisManual, observacoes, mostrarPorServico, mostrarPorProfissional, divisaoProfissional, detalhe });
+  const estadoInicialRef = useRef(estadoStr);
+  const rascunhoLidoRef = useRef(false);
+  const [rascunhoRecuperado, setRascunhoRecuperado] = useState(false);
+  useEffect(() => {
+    let vivo = true;
+    lerRascunho(chaveRascunho).then((d) => {
+      rascunhoLidoRef.current = true;
+      if (!vivo || !d) return;
+      setFaturamentoBrutoManual(d.faturamentoBrutoManual ?? "");
+      setAtendimentosTotaisManual(d.atendimentosTotaisManual ?? "");
+      setObservacoes(d.observacoes ?? "");
+      setMostrarPorServico(!!d.mostrarPorServico);
+      setMostrarPorProfissional(!!d.mostrarPorProfissional);
+      setDivisaoProfissional(d.divisaoProfissional || {});
+      setDetalhe(d.detalhe || {});
+      setRascunhoRecuperado(true);
+    });
+    return () => { vivo = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  useEffect(() => {
+    if (!rascunhoLidoRef.current || estadoStr === estadoInicialRef.current) return;
+    salvarComFallback(chaveRascunho, estadoStr);
+  }, [estadoStr, chaveRascunho]);
+  const descartarRascunho = () => excluirComFallback(chaveRascunho);
+
   const servicosValidos = useMemo(
     () => (servicos || []).filter((s) => calcularParaExibicao(s, nd).status === "ok"),
     [servicos, nd]
@@ -5028,11 +5352,18 @@ function FormularioFechamento({ mes, nd, servicos, profissionais, registroExiste
       fechadoEm: registroExistente?.fechadoEm ?? Date.now(),
       editadoEm: Date.now(),
     });
+    descartarRascunho();
   };
 
   return (
     <div className="rounded-xl p-3 space-y-3 pop-in" style={{ background: t.surface, border: `1px solid ${t.border}` }}>
       <p className="text-xs font-semibold" style={{ color: t.text }}>Fechamento de {labelMes(mes)}</p>
+      {rascunhoRecuperado && (
+        <div className="pop-in flex items-start gap-1.5 rounded-xl p-2.5 text-xs" role="status" style={{ background: t.successSoft, color: t.successText }}>
+          <CheckCircle2 size={14} className="mt-0.5 shrink-0" />
+          <span>Recuperamos o que você tinha digitado neste fechamento. Confira e salve.</span>
+        </div>
+      )}
 
       {mostrarPorServico ? (
         <div className="grid grid-cols-2 gap-2">
@@ -5177,7 +5508,7 @@ function FormularioFechamento({ mes, nd, servicos, profissionais, registroExiste
         >
           <Save size={12} /> Salvar fechamento
         </button>
-        <button onClick={onCancelar} className="btn-press rounded-lg px-3 py-2 text-xs font-semibold" style={{ background: t.surfaceAlt, color: t.textMuted }}>
+        <button onClick={() => { descartarRascunho(); onCancelar(); }} className="btn-press rounded-lg px-3 py-2 text-xs font-semibold" style={{ background: t.surfaceAlt, color: t.textMuted }}>
           Cancelar
         </button>
       </div>
@@ -5193,6 +5524,19 @@ function FechamentoMensal({ nd, servicos, fechamentos, onSalvar, onRemover, onCa
 
   const chaveAtual = chaveMes(new Date());
   const fechamentoAtual = fechamentos?.find((f) => f.mes === chaveAtual);
+
+  // Havia um fechamento sendo digitado (Bloco 9)? Reabre direto nele.
+  useEffect(() => {
+    let vivo = true;
+    listarComFallback(chaveRascunhoFechamento("")).then((chaves) => {
+      if (!vivo || chaves.length === 0) return;
+      const mes = chaves.sort().pop().slice(chaveRascunhoFechamento("").length);
+      if (!mes) return;
+      setEditando(mes);
+      setAberto(true);
+    });
+    return () => { vivo = false; };
+  }, []);
 
   const salvar = (registro) => {
     onSalvar(registro);
