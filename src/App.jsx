@@ -22,6 +22,7 @@ import {
   calcularValorItemVariavel, somaCustosVariaveis, calcularServico, SEMANAS_POR_MES_CALENDARIO, pontoEquilibrioSemanal, calcularReverso,
   calcularUnificado, calcularParaExibicao, montarDREMensal, montarDRE, calcularIndicadoresGerenciais, calcularPrecoMinimoPacote,
   distanciaKm, mediana, ultimoPrecoPorConcorrente, pisoDoServico,
+  FONTES_PRECO, DIAS_PRECO_ANTIGO, diasDesde, posicaoNaConcorrencia, linhasPlanilhaObservatorio,
 } from "./calculos.js";
 
 /* ======================================================================= */
@@ -704,7 +705,7 @@ function useToast() {
 /* ======================================================================= */
 /* App                                                                      */
 /* ======================================================================= */
-const VERSAO_APP = "v7.16";
+const VERSAO_APP = "v7.17";
 const CHAVE_TEMA = "preco-justo:tema";
 
 /* Rede de segurança: se qualquer aba travar por um motivo que eu não       */
@@ -4419,7 +4420,7 @@ function Painel({ nd, negocio, servicos, onRemoverServico, onEditarServico }) {
     .filter((s) => s.calc.status === "ok")
     .map((s) => ({ name: s.nome, Preço: Math.round(s.calc.preco), Margem: Math.round(s.calc.margemContribuicaoUnitaria) }));
 
-  const exportarExcel = () => {
+  const exportarExcel = async () => {
     const wb = XLSX.utils.book_new();
     const wsDRE = XLSX.utils.aoa_to_sheet([
       ["DRE gerencial do mês (recalculado com as configurações atuais)", ""],
@@ -4476,6 +4477,12 @@ function Painel({ nd, negocio, servicos, onRemoverServico, onEditarServico }) {
       }),
     ]);
     XLSX.utils.book_append_sheet(wb, wsFluxo, "Fluxo de Caixa 12m");
+
+    // Bloco 10: concorrentes e preços anotados no Observatório, quando houver.
+    const obs = await lerDadosObservatorio();
+    if (obs.concorrentes.length > 0) {
+      anexarAbasObservatorio(wb, linhasPlanilhaObservatorio(obs.concorrentes, obs.meusLocais, servicosCalc, nd));
+    }
 
     XLSX.writeFile(wb, `preco-justo-relatorio-${new Date().toISOString().slice(0, 10)}.xlsx`);
   };
@@ -6243,25 +6250,39 @@ const CIDADES_OBSERVATORIO = [
   { id: "Salvador", centro: [-12.9711, -38.5108], zoom: 12 },
 ];
 const TIPOS_CONCORRENTE = ["Salão", "Barbearia", "Outro"];
-const FONTES_PRECO = [
-  { id: "local", label: "Tabela no local" },
-  { id: "internet", label: "Instagram ou site" },
-  { id: "contato", label: "WhatsApp ou ligação" },
-  { id: "cliente", label: "Cliente contou" },
-  { id: "outro", label: "Outro" },
-];
 const RAIOS_KM = [null, 1, 3, 5];
-const DIAS_PRECO_ANTIGO = 180;
 
 const pad2 = (n) => String(n).padStart(2, "0");
 const hojeISO = () => { const d = new Date(); return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`; };
 const fmtDataBR = (iso) => (iso ? new Date(iso + "T12:00:00").toLocaleDateString("pt-BR") : "");
-const diasDesde = (iso) => Math.floor((Date.now() - new Date(iso + "T12:00:00").getTime()) / 86400000);
 
 const fmtKm = (km) => (km < 1 ? `${Math.round(km * 1000)} m` : `${km.toLocaleString("pt-BR", { maximumFractionDigits: 1 })} km`);
 
 function lerJSON(texto, padrao) {
   try { const v = JSON.parse(texto); return v ?? padrao; } catch { return padrao; }
+}
+
+/* Planilha do Observatório (Bloco 10): concorrentes, preços anotados e a     */
+/* comparação, em abas próprias. Usada pelo botão do Observatório e pelo     */
+/* relatório completo do Painel. As linhas vêm de linhasPlanilhaObservatorio */
+/* (calculos.js, testada), com as mesmas regras da tela.                     */
+async function lerDadosObservatorio() {
+  const [c, l] = await Promise.all([lerComFallback("observatorio:concorrentes"), lerComFallback("observatorio:meus-locais")]);
+  const concorrentes = lerJSON(c, []);
+  const meusLocais = lerJSON(l, {});
+  return { concorrentes: Array.isArray(concorrentes) ? concorrentes : [], meusLocais: meusLocais && typeof meusLocais === "object" ? meusLocais : {} };
+}
+function anexarAbasObservatorio(wb, linhas) {
+  const abas = [
+    ["concorrentes", "Concorrentes", [18, 30, 11, 18, 14, 10, 11, 11]],
+    ["precos", "Preços anotados", [18, 30, 24, 12, 11, 12, 20, 12]],
+    ["comparacao", "Comparação de preços", [18, 24, 13, 15, 12, 11, 12, 11, 14, 22, 14]],
+  ];
+  abas.forEach(([chave, nome, larguras]) => {
+    const ws = XLSX.utils.aoa_to_sheet(linhas[chave]);
+    ws["!cols"] = larguras.map((wch) => ({ wch }));
+    XLSX.utils.book_append_sheet(wb, ws, nome);
+  });
 }
 
 function BotaoSegmento({ ativo, onClick, children, ...rest }) {
@@ -6339,18 +6360,12 @@ function LegendaPonto({ cor, forma = "circulo", borda, children }) {
 /* Comparação de um serviço do usuário com os preços anotados. */
 function ComparacaoServico({ s, seu, piso, observacoes }) {
   const t = useT();
-  const valores = observacoes.map((o) => o.valor);
-  const med = mediana(valores);
-  const min = Math.min(...valores);
-  const max = Math.max(...valores);
-  const difPct = med > 0 ? ((seu - med) / med) * 100 : 0;
+  const { chave, texto, difPct, med, min, max } = posicaoNaConcorrencia(seu, observacoes.map((o) => o.valor));
   const antigos = observacoes.filter((o) => diasDesde(o.data) > DIAS_PRECO_ANTIGO).length;
-  let posicao;
-  if (Math.abs(difPct) < 2.5) posicao = { texto: "na mediana", cor: t.successText, bg: t.successSoft };
-  else if (seu < min) posicao = { texto: observacoes.length === 1 ? "abaixo do concorrente" : "abaixo de todos", cor: t.warningText, bg: t.warningSoft };
-  else if (seu > max) posicao = { texto: observacoes.length === 1 ? "acima do concorrente" : "acima de todos", cor: t.warningText, bg: t.warningSoft };
-  else if (difPct < 0) posicao = { texto: "abaixo da mediana", cor: t.secondaryText, bg: t.secondarySoft };
-  else posicao = { texto: "acima da mediana", cor: t.secondaryText, bg: t.secondarySoft };
+  const cores = chave === "mediana" ? { cor: t.successText, bg: t.successSoft }
+    : chave.endsWith("todos") ? { cor: t.warningText, bg: t.warningSoft }
+    : { cor: t.secondaryText, bg: t.secondarySoft };
+  const posicao = { texto, ...cores };
   const plural = observacoes.length === 1 ? "concorrente" : "concorrentes";
   return (
     <div className="fade-up rounded-xl p-3" style={{ background: t.surfaceAlt }}>
@@ -6631,6 +6646,24 @@ function Observatorio({ servicos, nd, cidadePerfil }) {
     return { s, seu: calc.preco, piso: pisoDoServico(s, nd), observacoes };
   }).filter(Boolean).sort((a, b) => a.s.nome.localeCompare(b.s.nome, "pt-BR")), [servicos, nd, considerados]);
 
+  // Planilha só do Observatório, com todas as cidades (Bloco 10).
+  const baixarPlanilha = () => {
+    const wb = XLSX.utils.book_new();
+    const hoje = new Date();
+    const sobre = XLSX.utils.aoa_to_sheet([
+      ["Observatório de concorrentes — Preço Justo"],
+      [`Exportado em ${hoje.toLocaleDateString("pt-BR")}, versão ${VERSAO_APP}.`],
+      ["Concorrentes, posições e preços foram anotados por você no app, cada preço com a data e o lugar onde foi visto."],
+      ["A comparação usa o preço mais recente de cada concorrente, a mediana e o seu piso (preço com margem zero), como na tela."],
+      ["Preços com mais de 6 meses podem ter mudado: confira antes de decidir."],
+    ]);
+    sobre["!cols"] = [{ wch: 110 }];
+    XLSX.utils.book_append_sheet(wb, sobre, "Sobre");
+    anexarAbasObservatorio(wb, linhasPlanilhaObservatorio(concorrentes, meusLocais, servicos || [], nd, hoje));
+    XLSX.writeFile(wb, `preco-justo-observatorio-${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, "0")}-${String(hoje.getDate()).padStart(2, "0")}.xlsx`);
+    show("Planilha baixada.");
+  };
+
   const iniciarMarcacao = (m) => { setMarcando(m); setRascunho(null); };
   const aoMarcar = ({ lat, lng }) => {
     if (!marcando) return;
@@ -6807,9 +6840,18 @@ function Observatorio({ servicos, nd, cidadePerfil }) {
 
       {/* ---------- Concorrentes anotados ---------- */}
       <div className="rounded-2xl p-4 space-y-3 min-w-0" style={cardStyle}>
-        <p className="text-sm font-semibold" style={{ color: t.text }}>
-          Concorrentes anotados em {cidade} <span className="font-num font-normal" style={{ color: t.textMuted }}>({daCidade.length})</span>
-        </p>
+        <div className="flex items-start justify-between gap-2 flex-wrap">
+          <p className="text-sm font-semibold" style={{ color: t.text }}>
+            Concorrentes anotados em {cidade} <span className="font-num font-normal" style={{ color: t.textMuted }}>({daCidade.length})</span>
+          </p>
+          {concorrentes.length > 0 && (
+            <button type="button" onClick={baixarPlanilha}
+              className="btn-press touch-target inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold"
+              style={{ background: t.surfaceAlt, color: t.text, border: `1px solid ${t.border}` }}>
+              <Download size={13} /> Baixar planilha (Excel)
+            </button>
+          )}
+        </div>
         {daCidade.length === 0 ? (
           <p className="text-xs" style={{ color: t.textMuted }}>Nenhum ainda. Use "Adicionar concorrente" no mapa acima.</p>
         ) : (

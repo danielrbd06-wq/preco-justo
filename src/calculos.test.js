@@ -11,6 +11,7 @@ import {
   computeNegocioDerivado, calcularValorItemVariavel, calcularServico, calcularReverso,
   calcularParaExibicao, montarDRE, montarDREMensal, calcularIndicadoresGerenciais,
   calcularPrecoMinimoPacote, distanciaKm, mediana, ultimoPrecoPorConcorrente, pisoDoServico,
+  posicaoNaConcorrencia, linhasPlanilhaObservatorio, diasDesde,
 } from "./calculos.js";
 
 /* Mesmo cenário do "Carregar exemplo": salão de 2 profissionais no Simples. */
@@ -233,5 +234,64 @@ describe("comparação com a concorrência (Bloco 6)", () => {
   it("distância: 1 grau de latitude ≈ 111,2 km", () => {
     expect(distanciaKm({ lat: -12, lng: -38.9 }, { lat: -13, lng: -38.9 })).toBeCloseTo(111.19, 1);
     expect(distanciaKm({ lat: -12.27, lng: -38.97 }, { lat: -12.27, lng: -38.97 })).toBe(0);
+  });
+});
+
+describe("planilha do Observatório (Bloco 10)", () => {
+  const nd = computeNegocioDerivado(negocioExemplo());
+  const hoje = new Date("2026-10-11T12:00:00");
+  const concorrentes = [
+    { id: "a", cidade: "Feira de Santana", nome: "Barbearia A", tipo: "Barbearia", bairro: "Centro", lat: -12.26, lng: -38.96, precos: [
+      { id: "p1", servicoId: "corte", servicoNome: "Corte Masculino", valor: 20, data: "2026-01-10", fonte: "local" },
+      { id: "p2", servicoId: "corte", servicoNome: "Corte Masculino", valor: 25, data: "2026-10-01", fonte: "internet" },
+    ] },
+    { id: "b", cidade: "Feira de Santana", nome: "Salão B", tipo: "Salão", bairro: "", lat: null, lng: null, precos: [
+      { id: "p3", servicoId: "corte", servicoNome: "Corte Masculino", valor: 30, data: "2026-03-01", fonte: "contato" },
+      { id: "p4", servicoId: null, servicoNome: "Sobrancelha", valor: 35, data: "2026-10-01", fonte: "cliente" },
+    ] },
+    { id: "c", cidade: "Irará", nome: "Barbearia C", tipo: "Barbearia", bairro: "Centro", lat: -12.046, lng: -38.766, precos: [
+      { id: "p5", servicoId: "corte", servicoNome: "Corte Masculino", valor: 18, data: "2026-10-05", fonte: "local" },
+    ] },
+  ];
+  const meusLocais = { "Feira de Santana": { lat: -12.2667, lng: -38.9667 } };
+  const linhas = linhasPlanilhaObservatorio(concorrentes, meusLocais, servicosExemplo(), nd, hoje);
+
+  it("posição na concorrência, com o mesmo texto da tela", () => {
+    expect(posicaoNaConcorrencia(20.22, [25, 30]).texto).toBe("abaixo de todos");
+    expect(posicaoNaConcorrencia(20.22, [25]).texto).toBe("abaixo do concorrente");
+    expect(posicaoNaConcorrencia(25.3, [18, 25, 30]).texto).toBe("na mediana");
+    expect(posicaoNaConcorrencia(28, [18, 25, 30]).texto).toBe("acima da mediana");
+  });
+  it("dias desde a anotação", () => {
+    expect(diasDesde("2026-10-01", hoje)).toBe(10);
+  });
+  it("aba de concorrentes: distância só para quem tem posição e está na cidade do negócio marcado", () => {
+    expect(linhas.concorrentes).toHaveLength(4);
+    const [, a, b, c] = linhas.concorrentes;
+    expect(a[0]).toBe("Feira de Santana");
+    expect(a[4]).toBeGreaterThan(0.5);
+    expect(a[4]).toBeLessThan(1.5);
+    expect(b[4]).toBeNull(); // sem posição no mapa
+    expect(c[4]).toBeNull(); // Irará: negócio não marcado lá
+  });
+  it("aba de preços: todas as anotações, com data no padrão brasileiro e fora da comparação marcado", () => {
+    expect(linhas.precos).toHaveLength(6);
+    const sobrancelha = linhas.precos.find((l) => l[2] === "Sobrancelha");
+    expect(sobrancelha[3]).toBe("Não");
+    expect(sobrancelha[5]).toBe("01/10/2026");
+    expect(sobrancelha[6]).toBe("Cliente contou");
+  });
+  it("aba de comparação: por cidade, com o preço mais recente de cada concorrente", () => {
+    expect(linhas.comparacao).toHaveLength(3); // cabeçalho + Feira + Irará (só o Corte tem preços)
+    const feira = linhas.comparacao.find((l) => l[0] === "Feira de Santana");
+    expect(feira[1]).toBe("Corte Masculino");
+    expect(feira[2]).toBeCloseTo(20.22, 2);
+    expect(feira[3]).toBeCloseTo(11.93, 2);
+    expect(feira[4]).toBe(2); // Barbearia A conta uma vez só (R$ 25, a mais recente)
+    expect(feira[6]).toBe(27.5); // mediana de 25 e 30
+    expect(feira[9]).toBe("abaixo de todos");
+    expect(feira[10]).toBe(1); // o de R$ 30 é de março: mais de 6 meses
+    const irara = linhas.comparacao.find((l) => l[0] === "Irará");
+    expect(irara[9]).toBe("acima do concorrente");
   });
 });
