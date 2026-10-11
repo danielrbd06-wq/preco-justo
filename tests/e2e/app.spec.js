@@ -2,6 +2,8 @@
 // cada aba abrindo sem erro e sem rolagem para o lado.
 import { test, expect } from "@playwright/test";
 import { primeiroAcesso } from "./ajuda.js";
+import * as XLSX from "xlsx";
+import { readFileSync } from "node:fs";
 
 
 // Valores em reais saem com espaço não separável (R$ 1,00); \s cobre os dois.
@@ -66,4 +68,17 @@ test("Observatório: o mapa carrega e a comparação aparece com um preço anota
   await page.getByRole("button", { name: "Salvar preço" }).click();
   await expect(visivel(page, /abaixo da mediana de 1 concorrente: R\$\s25,00/)).toBeVisible();
   await expect(visivel(page, /Seu piso, sem lucro, é R\$\s11,93/)).toBeVisible();
+
+  // Bloco 10: planilha do Observatório
+  const [download] = await Promise.all([
+    page.waitForEvent("download"),
+    page.getByRole("button", { name: "Baixar planilha (Excel)" }).click(),
+  ]);
+  expect(download.suggestedFilename()).toMatch(/^preco-justo-observatorio-\d{4}-\d{2}-\d{2}\.xlsx$/);
+  const wb = XLSX.read(readFileSync(await download.path()));
+  expect(wb.SheetNames).toEqual(["Sobre", "Concorrentes", "Preços anotados", "Comparação de preços"]);
+  const comparacao = XLSX.utils.sheet_to_json(wb.Sheets["Comparação de preços"], { header: 1 });
+  expect(comparacao[1].slice(0, 2)).toEqual(["Feira de Santana", "Corte Masculino"]);
+  expect(comparacao[1][6]).toBe(25); // mediana
+  expect(comparacao[1][9]).toBe("abaixo do concorrente");
 });

@@ -525,3 +525,89 @@ export function pisoDoServico(s, nd) {
   const r = calcularServico({ ...s, margemPct: 0 }, nd);
   return r.status === "ok" ? r.preco : null;
 }
+
+/* ======================================================================= */
+/* Observatório: posição na concorrência e planilha (Bloco 10).            */
+/* ======================================================================= */
+export const FONTES_PRECO = [
+  { id: "local", label: "Tabela no local" },
+  { id: "internet", label: "Instagram ou site" },
+  { id: "contato", label: "WhatsApp ou ligação" },
+  { id: "cliente", label: "Cliente contou" },
+  { id: "outro", label: "Outro" },
+];
+export const DIAS_PRECO_ANTIGO = 180;
+
+/* Dias entre uma data AAAA-MM-DD e hoje (meio-dia, para não errar pelo fuso). */
+export function diasDesde(iso, hoje = new Date()) {
+  return Math.floor((hoje.getTime() - new Date(iso + "T12:00:00").getTime()) / 86400000);
+}
+
+/* Onde o preço do usuário fica entre os preços anotados dos concorrentes.   */
+/* Até 2,5% de diferença conta como "na mediana".                            */
+export function posicaoNaConcorrencia(seu, valores) {
+  const med = mediana(valores);
+  const min = Math.min(...valores);
+  const max = Math.max(...valores);
+  const difPct = med > 0 ? ((seu - med) / med) * 100 : 0;
+  const um = valores.length === 1;
+  let chave, texto;
+  if (Math.abs(difPct) < 2.5) { chave = "mediana"; texto = "na mediana"; }
+  else if (seu < min) { chave = "abaixo-todos"; texto = um ? "abaixo do concorrente" : "abaixo de todos"; }
+  else if (seu > max) { chave = "acima-todos"; texto = um ? "acima do concorrente" : "acima de todos"; }
+  else if (difPct < 0) { chave = "abaixo"; texto = "abaixo da mediana"; }
+  else { chave = "acima"; texto = "acima da mediana"; }
+  return { chave, texto, difPct, med, min, max };
+}
+
+const centavos = (v) => (Number.isFinite(v) ? Math.round(v * 100) / 100 : null);
+const dataBR = (iso) => (iso ? iso.split("-").reverse().join("/") : "");
+
+/* Linhas das três abas do Observatório na planilha: concorrentes, preços    */
+/* anotados e comparação por cidade e serviço (as mesmas regras da tela).    */
+export function linhasPlanilhaObservatorio(concorrentes, meusLocais, servicos, nd, hoje = new Date()) {
+  const lista = Array.isArray(concorrentes) ? concorrentes : [];
+  const locais = meusLocais || {};
+  const fonte = (id) => FONTES_PRECO.find((f) => f.id === id)?.label || "Outro";
+  const servicoExiste = (id) => (servicos || []).some((s) => s.id === id);
+
+  const abaConcorrentes = [
+    ["Cidade", "Concorrente", "Tipo", "Bairro", "Distância do meu negócio (km)", "Preços anotados", "Latitude", "Longitude"],
+    ...lista.map((c) => {
+      const meu = locais[c.cidade];
+      const dist = meu && c.lat != null ? Math.round(distanciaKm(meu, c) * 100) / 100 : null;
+      return [c.cidade, c.nome, c.tipo, c.bairro || "", dist, (c.precos || []).length, c.lat ?? null, c.lng ?? null];
+    }),
+  ];
+
+  const abaPrecos = [
+    ["Cidade", "Concorrente", "Serviço", "Entra na comparação", "Preço (R$)", "Data", "Onde viu", "Dias desde a anotação"],
+    ...lista.flatMap((c) => (c.precos || []).map((p) => [
+      c.cidade, c.nome, p.servicoNome, p.servicoId && servicoExiste(p.servicoId) ? "Sim" : "Não",
+      centavos(N(p.valor)), dataBR(p.data), fonte(p.fonte), diasDesde(p.data, hoje),
+    ])),
+  ];
+
+  const abaComparacao = [
+    ["Cidade", "Serviço", "Meu preço (R$)", "Meu piso, sem lucro (R$)", "Concorrentes", "Menor (R$)", "Mediana (R$)", "Maior (R$)",
+      "Diferença para a mediana (%)", "Situação", "Preços com mais de 6 meses"],
+  ];
+  const cidades = [...new Set(lista.map((c) => c.cidade))].sort((a, b) => a.localeCompare(b, "pt-BR"));
+  const servicosOrdenados = [...(servicos || [])].sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
+  for (const cidade of cidades) {
+    const daCidade = lista.filter((c) => c.cidade === cidade);
+    for (const s of servicosOrdenados) {
+      const calc = nd ? calcularParaExibicao(s, nd) : { status: "sem-negocio" };
+      if (calc.status !== "ok") continue;
+      const obs = ultimoPrecoPorConcorrente(daCidade, s.id);
+      if (obs.length === 0) continue;
+      const pos = posicaoNaConcorrencia(calc.preco, obs.map((o) => o.valor));
+      abaComparacao.push([
+        cidade, s.nome, centavos(calc.preco), centavos(pisoDoServico(s, nd)), obs.length,
+        centavos(pos.min), centavos(pos.med), centavos(pos.max), Math.round(pos.difPct * 10) / 10, pos.texto,
+        obs.filter((o) => diasDesde(o.data, hoje) > DIAS_PRECO_ANTIGO).length,
+      ]);
+    }
+  }
+  return { concorrentes: abaConcorrentes, precos: abaPrecos, comparacao: abaComparacao };
+}

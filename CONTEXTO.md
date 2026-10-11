@@ -76,8 +76,8 @@ As melhorias foram organizadas em **blocos** (os 7 da análise inicial e os segu
 | 7 | Polimento visual (decidido com o Daniel): quebra de linha equilibrada (`text-wrap`), largura máxima de linha, rótulos sem vão ao quebrar, seções do Negócio sem linhas divisórias redundantes, títulos de seção sem corte, selos longos como nota de rodapé | ✅ Implementado (`docs/bloco-7-issue-e-pr.md`) |
 | 8 | Esteira de qualidade: contas separadas em `src/calculos.js`, 38 testes das contas (Vitest), testes no navegador (Playwright) e verificação no GitHub (Actions) em cada PR | ✅ Implementado (`docs/bloco-8-issue-e-pr.md`) |
 | 9 | Não perder trabalho: o que foi digitado sobrevive à troca de aba, ao recarregar e à atualização (auto-salvar descarrega pendências; rascunhos do serviço novo e do fechamento); aviso "Nova versão disponível"; cópia de segurança (baixar e restaurar) | ✅ Implementado (`docs/bloco-9-issues-e-pr.md`) |
-| 10 | Excel do Observatório (concorrentes e preços anotados) | Próximo |
-| 11 | Lei do Salão-Parceiro: cota-parte do parceiro fora da receita bruta e do imposto | Pendente (pesquisa feita) |
+| 10 | Excel do Observatório: botão "Baixar planilha (Excel)" no Observatório (Sobre, Concorrentes, Preços anotados, Comparação de preços) e as mesmas abas no relatório completo do Painel | ✅ Implementado (`docs/bloco-10-issue-e-pr.md`) |
+| 11 | Lei do Salão-Parceiro: cota-parte do parceiro fora da receita bruta e do imposto | Próximo (pesquisa feita) |
 
 ### Esteira de qualidade (Bloco 8) — vale para toda mudança
 - **Toda conta nova ou alterada vai para `src/calculos.js`, com teste em `src/calculos.test.js`.** Os valores esperados devem ser conferidos à mão e explicados no teste. A cobertura mínima de `calculos.js` é de 85% das linhas e 80% das funções; abaixo disso, a verificação falha.
@@ -130,6 +130,7 @@ As melhorias foram organizadas em **blocos** (os 7 da análise inicial e os segu
 - Cidades: `CIDADES_OBSERVATORIO` (Feira de Santana, Irará — cidade de testes do app — e Salvador). O centro de cada cidade só posiciona a vista inicial (coordenadas da Wikipédia).
 - Armazenamento local: `observatorio:concorrentes` (lista de `{ id, cidade, nome, tipo, bairro, lat, lng, precos: [{ id, servicoId, servicoNome, valor, data, fonte }] }`) e `observatorio:meus-locais` (`{ [cidade]: { lat, lng } }`).
 - Comparação por serviço: só o **preço mais recente de cada concorrente** (`ultimoPrecoPorConcorrente`), **mediana** em vez de média, faixa mín.–máx. e o **piso** do serviço (`pisoDoServico`: preço com margem 0). Avisos: menos de 3 observações; preços com mais de 180 dias; mediana abaixo do piso.
+- **Planilha (Bloco 10):** as linhas vêm de `linhasPlanilhaObservatorio` (`calculos.js`, testada) e a posição de cada serviço de `posicaoNaConcorrencia`, a mesma função usada na tela. Qualquer regra nova da comparação muda nos dois lugares de uma vez.
 - Com o local do negócio marcado, o filtro de raio (1, 3 ou 5 km, haversine) vale para o mapa e para a comparação.
 - Tiles do OpenStreetMap: atribuição obrigatória (já no mapa) e uso moderado, pela política de uso dos tiles. Sem internet, as ruas não carregam; a lista e a comparação continuam funcionando. Se o uso crescer muito, trocar por um provedor de tiles com plano próprio.
 - O mapa fica num contexto de empilhamento próprio (`z-index: 0`) para os painéis do Leaflet não cobrirem a barra de navegação e os balões do app. No tema escuro, os tiles são invertidos por CSS.
