@@ -11,7 +11,7 @@ import {
   computeNegocioDerivado, calcularValorItemVariavel, calcularServico, calcularReverso,
   calcularParaExibicao, montarDRE, montarDREMensal, calcularIndicadoresGerenciais,
   calcularPrecoMinimoPacote, distanciaKm, mediana, ultimoPrecoPorConcorrente, pisoDoServico,
-  posicaoNaConcorrencia, linhasPlanilhaObservatorio, diasDesde,
+  posicaoNaConcorrencia, linhasPlanilhaObservatorio, diasDesde, parcelaParceiro, parceiroValido,
 } from "./calculos.js";
 
 /* Mesmo cenário do "Carregar exemplo": salão de 2 profissionais no Simples. */
@@ -293,5 +293,84 @@ describe("planilha do Observatório (Bloco 10)", () => {
     expect(feira[10]).toBe(1); // o de R$ 30 é de março: mais de 6 meses
     const irara = linhas.comparacao.find((l) => l[0] === "Irará");
     expect(irara[9]).toBe("acima do concorrente");
+  });
+});
+
+describe("Lei do Salão-Parceiro (Bloco 11)", () => {
+  const parceira = { id: "ana", nome: "Ana", ativo: true, vinculo: "parceiro", comissaoPct: "40", atendimentosMes: "80", temCnpj: true, contratoHomologado: true };
+  const comissionada = { id: "bia", nome: "Bia", ativo: true, vinculo: "comissao", comissaoPct: "30", atendimentosMes: "60" };
+  const dona = { id: "maria", nome: "Maria", ativo: true, vinculo: "dono", atendimentosMes: "40" };
+  const ndCom = (extra = {}) => computeNegocioDerivado({ ...negocioExemplo(), profissionais: [parceira, comissionada, dona], ...extra });
+  const corteParceiro = { ...servicosExemplo()[0], comissaoPct: 40, comissaoEhCotaParte: true };
+
+  it("parceiro só vale com CNPJ e contrato homologado", () => {
+    expect(parceiroValido(parceira)).toBe(true);
+    expect(parceiroValido({ ...parceira, temCnpj: false })).toBe(false);
+    expect(parceiroValido({ ...parceira, contratoHomologado: false })).toBe(false);
+    expect(parceiroValido(comissionada)).toBe(false);
+  });
+  it("imposto e taxa só sobre a parte do salão: 6% × 60% = 3,6%; 3% × 60% = 1,8%", () => {
+    const nd = ndCom();
+    const r = calcularServico(corteParceiro, nd);
+    expect(r.parcelaParceiroPct).toBe(40);
+    expect(r.impostoSobrePrecoPct).toBeCloseTo(3.6, 10);
+    expect(r.taxaCartaoPct).toBeCloseTo(1.8, 10);
+    // (R$ 3,00 + 0,5 h × custo/h) ÷ (1 − 40% − 1,8% − 3,6% − 25%)
+    expect(r.preco).toBeCloseTo((3 + 0.5 * nd.custoFixoPorHora) / (1 - 0.704), 8);
+    expect(r.preco).toBeCloseTo(24.59, 2);
+    expect(r.valorCotaParte).toBeCloseTo(r.preco * 0.4, 10);
+  });
+  it("sem parceria, a mesma comissão de 40% dá preço maior", () => {
+    const nd = ndCom();
+    const r = calcularServico({ ...corteParceiro, comissaoEhCotaParte: false }, nd);
+    expect(r.parcelaParceiroPct).toBe(0);
+    expect(r.preco).toBeCloseTo((3 + 0.5 * nd.custoFixoPorHora) / (1 - 0.74), 8);
+  });
+  it("salão MEI não pode ser salão-parceiro: a cota vira comissão comum", () => {
+    const nd = ndCom({ regime: "mei", meiDas: "80" });
+    expect(nd.temParceriaValida).toBe(false);
+    expect(parcelaParceiro(corteParceiro, nd)).toBe(0);
+  });
+  it("média da equipe: só a parte dos parceiros válidos sai da receita (40% × 80 ÷ 180)", () => {
+    const nd = ndCom();
+    expect(nd.comissaoEquipe.pct).toBeCloseTo(5000 / 180, 10);
+    expect(nd.comissaoEquipe.parcelaParceiroPct).toBeCloseTo(3200 / 180, 10);
+    expect(parcelaParceiro({ comissaoModo: "equipe" }, nd)).toBeCloseTo(17.78, 2);
+    const semCnpj = computeNegocioDerivado({ ...negocioExemplo(), profissionais: [{ ...parceira, temCnpj: false }, comissionada, dona] });
+    expect(semCnpj.comissaoEquipe.parcelaParceiroPct).toBe(0);
+  });
+  it("Modo A e Modo B batem também com parceiro", () => {
+    const nd = ndCom();
+    const a = calcularServico(corteParceiro, nd);
+    const b = calcularReverso({ ...corteParceiro, precoCobrado: a.preco, margemMetaPct: 25 }, nd);
+    expect(b.margemLiquidaPct).toBeCloseTo(25, 8);
+  });
+  it("DRE: valor cobrado − cota-parte = receita do salão, e a cota sai dos custos variáveis", () => {
+    const nd = ndCom();
+    const sc = [{ ...corteParceiro, calc: calcularServico(corteParceiro, nd) }];
+    const dre = montarDRE(sc, nd);
+    const P = sc[0].calc.preco;
+    expect(dre.valorCobrado).toBeCloseTo(P * 120, 8);
+    expect(dre.cotaParteParceiros).toBeCloseTo(P * 0.4 * 120, 8);
+    expect(dre.receitaBruta).toBeCloseTo(P * 0.6 * 120, 8);
+    expect(dre.impostos).toBeCloseTo(P * 0.6 * 0.06 * 120, 8); // 6% sobre a parte do salão
+    // margem de contribuição = mesma conta por unidade do motor
+    expect(dre.margemContribuicaoTotal).toBeCloseTo(sc[0].calc.margemContribuicaoUnitaria * 120, 8);
+  });
+  it("sem parceiros, o DRE não muda (valor cobrado = receita bruta)", () => {
+    const nd = computeNegocioDerivado(negocioExemplo());
+    const dre = montarDRE(comCalc(servicosExemplo(), nd), nd);
+    expect(dre.cotaParteParceiros).toBe(0);
+    expect(dre.valorCobrado).toBeCloseTo(dre.receitaBruta, 10);
+  });
+  it("fechamento antigo, sem cota-parte, continua igual", () => {
+    const d = montarDREMensal({ faturamentoBruto: 1000, impostoPagoReal: 60, custosVariaveisReaisInformados: 300, custosFixosSnapshot: 500 });
+    expect(d.cotaParteParceiros).toBe(0);
+    expect(d.receitaBruta).toBe(1000);
+  });
+  it("fechamento com cota-parte: receita do salão = faturamento − cota", () => {
+    const d = montarDREMensal({ faturamentoBruto: 1000, cotaParteSnapshot: 400, impostoPagoReal: 36, custosVariaveisReaisInformados: 50, custosFixosSnapshot: 300 });
+    expect(d.receitaBruta).toBe(600);
+    expect(d.resultadoOperacional).toBe(600 - 36 - 50 - 300);
   });
 });

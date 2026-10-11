@@ -77,7 +77,7 @@ As melhorias foram organizadas em **blocos** (os 7 da análise inicial e os segu
 | 8 | Esteira de qualidade: contas separadas em `src/calculos.js`, 38 testes das contas (Vitest), testes no navegador (Playwright) e verificação no GitHub (Actions) em cada PR | ✅ Implementado (`docs/bloco-8-issue-e-pr.md`) |
 | 9 | Não perder trabalho: o que foi digitado sobrevive à troca de aba, ao recarregar e à atualização (auto-salvar descarrega pendências; rascunhos do serviço novo e do fechamento); aviso "Nova versão disponível"; cópia de segurança (baixar e restaurar) | ✅ Implementado (`docs/bloco-9-issues-e-pr.md`) |
 | 10 | Excel do Observatório: botão "Baixar planilha (Excel)" no Observatório (Sobre, Concorrentes, Preços anotados, Comparação de preços) e as mesmas abas no relatório completo do Painel | ✅ Implementado (`docs/bloco-10-issue-e-pr.md`) |
-| 11 | Lei do Salão-Parceiro: cota-parte do parceiro fora da receita bruta e do imposto | Próximo (pesquisa feita) |
+| 11 | Lei do Salão-Parceiro: tipo "Profissional-parceiro" (cota-parte, CNPJ, contrato homologado), imposto e taxa da maquininha só sobre a parte do salão, DRE com valor cobrado − cota-parte, fechamento mensal e FAQ | ✅ Implementado (`docs/bloco-11-issue-e-pr.md`) |
 
 ### Esteira de qualidade (Bloco 8) — vale para toda mudança
 - **Toda conta nova ou alterada vai para `src/calculos.js`, com teste em `src/calculos.test.js`.** Os valores esperados devem ser conferidos à mão e explicados no teste. A cobertura mínima de `calculos.js` é de 85% das linhas e 80% das funções; abaixo disso, a verificação falha.
@@ -135,12 +135,19 @@ As melhorias foram organizadas em **blocos** (os 7 da análise inicial e os segu
 - Tiles do OpenStreetMap: atribuição obrigatória (já no mapa) e uso moderado, pela política de uso dos tiles. Sem internet, as ruas não carregam; a lista e a comparação continuam funcionando. Se o uso crescer muito, trocar por um provedor de tiles com plano próprio.
 - O mapa fica num contexto de empilhamento próprio (`z-index: 0`) para os painéis do Leaflet não cobrirem a barra de navegação e os balões do app. No tema escuro, os tiles são invertidos por CSS.
 
+### Lei do Salão-Parceiro (Bloco 11)
+- Base legal conferida com o Daniel (contador) em 10/10/2026: Lei 12.592/2012, art. 1º-A (§§ 4º, 5º, 7º, 8º, 10) e art. 1º-C, na redação da Lei 13.352/2016; regras do Simples Nacional na Resolução CGSN 140/2018 (exclusão da receita condicionada ao CNPJ do parceiro; salão-parceiro não pode ser MEI). STF confirmou a lei (ADI 5625).
+- Profissional com `vinculo: "parceiro"` usa `comissaoPct` como cota-parte e tem `temCnpj` e `contratoHomologado`. **`parceiroValido(p)`** exige os dois; em salão MEI (`nd.parceriaPermitida === false`) nenhum parceiro vale. Parceiro inválido entra nas contas como comissão comum, e a tela diz por quê.
+- **`parcelaParceiro(servico, nd)`** dá a parte do preço que é cota-parte: com a média da equipe, `nd.comissaoEquipe.parcelaParceiroPct`; com comissão própria marcada `comissaoEhCotaParte`, a comissão inteira. **Use sempre essa função**.
+- Nos motores: imposto sobre o preço = alíquota × (1 − cota); taxa da maquininha = taxa × (1 − cota), porque a taxa é dividida pela cota (decisão do Daniel). A comissão continua inteira no markup. Os motores devolvem `parcelaParceiroPct`, `impostoSobrePrecoPct` e `valorCotaParte` (parte de `valorComissao`).
+- DRE (`montarDRE`, `montarDREMensal`): `valorCobrado` − `cotaParteParceiros` = `receitaBruta` do salão; a cota sai dos custos variáveis para não ser descontada duas vezes. Sem parceiros, tudo fica igual. Fechamentos guardam `cotaParteSnapshot`; os antigos não têm o campo (vale 0).
+- Pontos de equilíbrio e margem de segurança passam a ser sobre a receita do salão (já sem a cota).
+
 ### Formatação e leitura de números (padrão brasileiro)
 - Exibição: `fmtBRL` (R$ 2.500,00) e `fmtPct` (6,00%), sempre com vírgula decimal.
 - Entrada: **todo campo em que o usuário digita valor deve passar por `normalizarValorBR`**. Ele entende "2.500", "2.500,00", "1.234.567" e "2500,50". Ler direto com `Number()` ou trocar só a vírgula por ponto grava "2.500" como R$ 2,50.
 
 ### Pendências e achados para virar Issue
-- **[Tributário — Bloco 11, pesquisa feita]** Lei do Salão-Parceiro: regras conferidas com o Daniel em 10/10/2026 (Lei 12.592/2012, art. 1º-A, §§ 4º, 5º, 7º, 8º e 10; art. 1º-C; regras do Simples hoje na Resolução CGSN 140/2018). A cota-parte do profissional-parceiro sai da receita bruta do salão se o parceiro tiver CNPJ; salão-parceiro não pode ser MEI; contrato escrito e homologado; sem contrato, vínculo empregatício. Plano: tipo de profissional "Parceiro", imposto sobre o preço × (1 − cota do parceiro), DRE com a cota-parte deduzida da receita.
 - **[Nova função — futuro]** Média anônima de preços entre usuários do app, por bairro. Exige servidor, consentimento, termos de uso e política de privacidade aprovados pelo jurídico (LGPD) e um número mínimo de negócios por grupo para não identificar ninguém. Adiada por decisão do Daniel no Bloco 6.
 - **[Dado]** A data exata da coleta dos estabelecimentos do Observatório não foi registrada. A tela mostra "até agosto de 2026" (limite comprovado pelo build de 16/08/2026). Ao refazer a coleta, preencher `COLETA_ESTABELECIMENTOS.data` em `src/App.jsx`.
 - **[Qualidade — próximo passo]** Lint e formatação automáticos (Biome) e cobertura de ramos (hoje 66%) ficaram de fora do Bloco 8 para não misturar milhares de mudanças de formatação com a esteira. Entram em um PR próprio.
