@@ -1,19 +1,8 @@
 // Fluxo principal do app no navegador: primeiro acesso, dados de exemplo e
 // cada aba abrindo sem erro e sem rolagem para o lado.
 import { test, expect } from "@playwright/test";
+import { primeiroAcesso } from "./ajuda.js";
 
-async function primeiroAcesso(page) {
-  await page.goto("/");
-  const campos = page.locator("input");
-  await campos.nth(0).fill("Maria Teste");
-  await campos.nth(1).fill("Salão da Maria");
-  for (const opcao of ["Salão de Cabeleireiro", "Autônomo(a), sozinho(a)", null]) {
-    await page.getByRole("button", { name: "Continuar" }).click();
-    if (opcao) await page.getByText(opcao, { exact: true }).click();
-  }
-  await page.getByRole("button", { name: "Confirmar e ir pros custos fixos" }).click();
-  await page.getByRole("button", { name: "Carregar exemplo" }).click();
-}
 
 // Valores em reais saem com espaço não separável (R$ 1,00); \s cobre os dois.
 const reais = (valor) => new RegExp(`R\\$\\s${valor.replace(/\./g, "\\.")}`);

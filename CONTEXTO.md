@@ -75,8 +75,9 @@ As melhorias foram organizadas em **blocos** (os 7 da análise inicial e os segu
 | 6 | Observatório: mapa da concorrência (Leaflet + OpenStreetMap) em Feira de Santana, Irará e Salvador, com marcação por toque; preços dos concorrentes anotados pelo usuário e comparação com os preços dele (mediana, faixa e piso), com raio de distância | ✅ Implementado (`docs/bloco-6-issues-e-pr.md`) |
 | 7 | Polimento visual (decidido com o Daniel): quebra de linha equilibrada (`text-wrap`), largura máxima de linha, rótulos sem vão ao quebrar, seções do Negócio sem linhas divisórias redundantes, títulos de seção sem corte, selos longos como nota de rodapé | ✅ Implementado (`docs/bloco-7-issue-e-pr.md`) |
 | 8 | Esteira de qualidade: contas separadas em `src/calculos.js`, 38 testes das contas (Vitest), testes no navegador (Playwright) e verificação no GitHub (Actions) em cada PR | ✅ Implementado (`docs/bloco-8-issue-e-pr.md`) |
-| 9 | Não perder trabalho: trocar de aba sem apagar o que foi digitado; aviso de "nova versão disponível" | Próximo |
-| 10 | Excel do Observatório (concorrentes e preços anotados) | Pendente |
+| 9 | Não perder trabalho: o que foi digitado sobrevive à troca de aba, ao recarregar e à atualização (auto-salvar descarrega pendências; rascunhos do serviço novo e do fechamento); aviso "Nova versão disponível"; cópia de segurança (baixar e restaurar) | ✅ Implementado (`docs/bloco-9-issues-e-pr.md`) |
+| 10 | Excel do Observatório (concorrentes e preços anotados) | Próximo |
+| 11 | Lei do Salão-Parceiro: cota-parte do parceiro fora da receita bruta e do imposto | Pendente (pesquisa feita) |
 
 ### Esteira de qualidade (Bloco 8) — vale para toda mudança
 - **Toda conta nova ou alterada vai para `src/calculos.js`, com teste em `src/calculos.test.js`.** Os valores esperados devem ser conferidos à mão e explicados no teste. A cobertura mínima de `calculos.js` é de 85% das linhas e 80% das funções; abaixo disso, a verificação falha.
@@ -84,6 +85,13 @@ As melhorias foram organizadas em **blocos** (os 7 da análise inicial e os segu
 - `.github/workflows/qualidade.yml` roda tudo em cada Pull Request para a `main`: `npm ci`, `npm run test:cobertura`, os dois builds e `npm run test:e2e`. A `main` deve ter a regra de proteção exigindo a verificação **"Testes e build"** antes do merge.
 - Rodar localmente: `npm test` (contas), `npm run test:cobertura`, `npm run build && npm run test:e2e` (navegador; na primeira vez, `npx playwright install chromium`).
 - Se um teste falhar porque a conta mudou de propósito, atualize o valor esperado **no mesmo PR** e explique a mudança na descrição.
+
+### Não perder trabalho (Bloco 9) — vale para todo formulário novo
+- **Formulário que salva sozinho:** use `useAutoSalvar`. Ele já salva o que estiver pendente quando o componente sai da tela (troca de aba), quando a página é escondida ou fechada e quando o evento `EVENTO_SALVAR_PENDENTES` é disparado (antes de atualizar o app e de baixar a cópia de segurança).
+- **Formulário com botão "Salvar"** (ex.: serviço novo, fechamento do mês): guarde um **rascunho** no aparelho a cada mudança (`salvarComFallback` numa chave `rascunho:*`), recupere ao montar com `lerRascunho` e mostre "Recuperamos o que você estava digitando". Salvar, cancelar ou "começar de novo" apagam o rascunho. Não use o aviso do navegador ao sair como única proteção: ele não cobre a troca de aba.
+- **Atualização do app:** o PWA está em modo `prompt`. A versão nova é baixada em segundo plano e o componente `AvisoNovaVersao` mostra "Nova versão disponível — Atualizar agora". O app procura versão nova a cada 30 minutos e quando volta para a tela. O build de arquivo único usa uma versão vazia do registro (plugin em `vite.single.config.js`).
+- **Cópia de segurança:** `src/copiaSeguranca.js` (funções puras, testadas). O arquivo `.json` leva todas as chaves salvas do app. Chave nova de armazenamento entra na cópia automaticamente, desde que use `salvarComFallback`. Se mudar o formato do arquivo, aumente `FORMATO_COPIA` e mantenha a leitura dos formatos antigos.
+- **Testes de navegador:** `tests/e2e/nao-perder-trabalho.spec.js` cobre a troca de aba no Negócio, o rascunho da Calculadora e a cópia de ida e volta. Os passos comuns ficam em `tests/e2e/ajuda.js`.
 
 ### Regras de tipografia e espaçamento (Bloco 7)
 - **Alinhamento sempre à esquerda. Não justificar texto:** em colunas estreitas e sem hifenização em português, o justificado abre "rios" de espaço entre as palavras e piora a leitura (WCAG 1.4.8). Decisão tomada com o Daniel.
@@ -131,11 +139,9 @@ As melhorias foram organizadas em **blocos** (os 7 da análise inicial e os segu
 - Entrada: **todo campo em que o usuário digita valor deve passar por `normalizarValorBR`**. Ele entende "2.500", "2.500,00", "1.234.567" e "2500,50". Ler direto com `Number()` ou trocar só a vírgula por ponto grava "2.500" como R$ 2,50.
 
 ### Pendências e achados para virar Issue
+- **[Tributário — Bloco 11, pesquisa feita]** Lei do Salão-Parceiro: regras conferidas com o Daniel em 10/10/2026 (Lei 12.592/2012, art. 1º-A, §§ 4º, 5º, 7º, 8º e 10; art. 1º-C; regras do Simples hoje na Resolução CGSN 140/2018). A cota-parte do profissional-parceiro sai da receita bruta do salão se o parceiro tiver CNPJ; salão-parceiro não pode ser MEI; contrato escrito e homologado; sem contrato, vínculo empregatício. Plano: tipo de profissional "Parceiro", imposto sobre o preço × (1 − cota do parceiro), DRE com a cota-parte deduzida da receita.
 - **[Nova função — futuro]** Média anônima de preços entre usuários do app, por bairro. Exige servidor, consentimento, termos de uso e política de privacidade aprovados pelo jurídico (LGPD) e um número mínimo de negócios por grupo para não identificar ninguém. Adiada por decisão do Daniel no Bloco 6.
 - **[Dado]** A data exata da coleta dos estabelecimentos do Observatório não foi registrada. A tela mostra "até agosto de 2026" (limite comprovado pelo build de 16/08/2026). Ao refazer a coleta, preencher `COLETA_ESTABELECIMENTOS.data` em `src/App.jsx`.
-- **[Tributário — confirmar com contador]** Lei do Salão-Parceiro (Lei 13.352/2016): no contrato de parceria, a cota-parte repassada ao profissional-parceiro não integra a receita bruta do salão-parceiro. O app ainda trata o preço inteiro do serviço como receita do salão (e calcula o imposto sobre ele), o que superestima o imposto de quem usa esse contrato. Vale um bloco próprio, com validação de um contador.
-- **[Melhoria]** O app baixa a versão nova em segundo plano, mas não avisa: quem abre pelo ícone da tela inicial pode ver a versão anterior até reabrir. Mostrar "Nova versão disponível — toque para atualizar".
 - **[Qualidade — próximo passo]** Lint e formatação automáticos (Biome) e cobertura de ramos (hoje 66%) ficaram de fora do Bloco 8 para não misturar milhares de mudanças de formatação com a esteira. Entram em um PR próprio.
 - **[Documento]** Rascunho dos termos de uso e da política de privacidade, para revisão jurídica antes de entrar no app.
-- **[Correção]** Mudar de aba descarta alterações ainda não salvas (o auto-salvar do Negócio espera 1,2 s; o rascunho de serviço novo da Calculadora não é guardado). Já existia antes dos blocos; vale tratar em bloco próprio.
 - **[Segurança]** A biblioteca `xlsx` 0.18.5 tem alertas conhecidos (prototype pollution e ReDoS) que afetam a **leitura** de planilhas. O app hoje só **gera** planilhas (não lê arquivos do usuário), então o risco prático é baixo — reavaliar se um dia o app passar a importar `.xlsx`.
