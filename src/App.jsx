@@ -23,6 +23,7 @@ import {
   calcularUnificado, calcularParaExibicao, montarDREMensal, montarDRE, calcularIndicadoresGerenciais, calcularPrecoMinimoPacote,
   distanciaKm, mediana, ultimoPrecoPorConcorrente, pisoDoServico,
   FONTES_PRECO, DIAS_PRECO_ANTIGO, diasDesde, posicaoNaConcorrencia, linhasPlanilhaObservatorio,
+  parceiroValido, parcelaParceiro,
 } from "./calculos.js";
 
 /* ======================================================================= */
@@ -411,7 +412,8 @@ function AvisoMediaIndisponivel({ children }) {
 /* (Bloco 4) ou a taxa média de recebimento (Bloco 5) disponível, o usuário  */
 /* escolhe entre a média e um valor próprio do serviço, e vê de onde a média */
 /* saiu. Usado nos dois modos da Calculadora.                                */
-function BlocoComissaoETaxa({ nd, comissaoPct, setComissaoPct, comissaoModo, setComissaoModo, taxaCartaoPct, setTaxaCartaoPct, taxaModo, setTaxaModo }) {
+function BlocoComissaoETaxa({ nd, comissaoPct, setComissaoPct, comissaoModo, setComissaoModo, taxaCartaoPct, setTaxaCartaoPct, taxaModo, setTaxaModo,
+  comissaoEhCotaParte = false, setComissaoEhCotaParte, parcelaAtual = 0 }) {
   const t = useT();
   const equipe = nd?.comissaoEquipe;
   const media = nd?.taxaRecebimento;
@@ -420,6 +422,22 @@ function BlocoComissaoETaxa({ nd, comissaoPct, setComissaoPct, comissaoModo, set
   const campoTaxa = (
     <CampoPct label="Taxa de cartão/Pix" value={taxaCartaoPct} onChange={setTaxaCartaoPct}
       ajuda="A taxa que a maquininha ou o banco cobra em cima da venda. Confira no seu extrato — deixar em 0 faz o preço vir mais barato do que deveria." faq="taxa-media-recebimento" />
+  );
+  // Bloco 11: comissão própria que é cota-parte de profissional-parceiro.
+  const opcaoCotaParte = !locatario && nd?.temParceriaValida && setComissaoEhCotaParte && (
+    <label className="flex items-start gap-2 text-xs" style={{ color: t.text }}>
+      <input type="checkbox" className="mt-0.5" checked={!!comissaoEhCotaParte} onChange={(e) => setComissaoEhCotaParte(e.target.checked)} />
+      <span>Esta comissão é a cota-parte de um profissional-parceiro (Lei do Salão-Parceiro) e fica fora da receita do salão.</span>
+    </label>
+  );
+  const notaParceria = parcelaAtual > 0 && (
+    <p className="pop-in text-[11px] flex items-start gap-1" style={{ color: t.successText }}>
+      <CheckCircle2 size={12} className="mt-0.5 shrink-0" />
+      <span>
+        Parceria: {fmtPct(parcelaAtual)} do preço é cota-parte de parceiro e fica fora da receita do salão. O imposto e a
+        taxa da maquininha entram no preço só sobre o resto.
+      </span>
+    </p>
   );
   const campoPropria = locatario ? (
     <CampoPct label="% que fica com o salão" value={comissaoPct} onChange={setComissaoPct}
@@ -463,8 +481,10 @@ function BlocoComissaoETaxa({ nd, comissaoPct, setComissaoPct, comissaoModo, set
         {avisoComissao}
         {avisoTaxa}
         <div className="grid grid-cols-2 gap-2">{campoPropria}{campoTaxa}</div>
+        {opcaoCotaParte}
         {avisoTaxaZero}
         {dicaMedia}
+        {notaParceria}
       </div>
     );
   }
@@ -480,14 +500,15 @@ function BlocoComissaoETaxa({ nd, comissaoPct, setComissaoPct, comissaoModo, set
         <ComposicaoMedia
           titulo={equipe.ponderada ? "Média ponderada pelos atendimentos de cada pessoa:" : "Média simples (falta o número de atendimentos de alguém no cadastro):"}
           linhas={equipe.participantes.map((pp) => ({
-            id: pp.id, nome: `${pp.nome}${pp.vinculo === "dono" ? " (dono/a)" : ""}`,
+            id: pp.id,
+            nome: `${pp.nome}${pp.vinculo === "dono" ? " (dono/a)" : pp.vinculo === "parceiro" ? (pp.cotaForaDaReceita ? " (parceiro)" : " (parceiro, conta como comissão)") : ""}`,
             valor: `${fmtPct(pp.pct)}${equipe.ponderada ? ` · ${pp.atendimentos} atend.` : ""}`,
           }))}
           total={`Comissão usada no preço: ${fmtPct(equipe.pct)}`} />
-      ) : campoPropria}
+      ) : <>{campoPropria}{opcaoCotaParte}</>}
     </div>
   ) : (
-    <div className="space-y-2">{avisoComissao}{campoPropria}</div>
+    <div className="space-y-2">{avisoComissao}{campoPropria}{opcaoCotaParte}</div>
   );
 
   const blocoTaxa = media ? (
@@ -512,7 +533,7 @@ function BlocoComissaoETaxa({ nd, comissaoPct, setComissaoPct, comissaoModo, set
     <div className="space-y-2">{avisoTaxa}{campoTaxa}{avisoTaxaZero}{dicaMedia}</div>
   );
 
-  return <div className="space-y-4">{blocoComissao}{blocoTaxa}</div>;
+  return <div className="space-y-4">{blocoComissao}{blocoTaxa}{notaParceria}</div>;
 }
 
 /* ======================================================================= */
@@ -705,7 +726,7 @@ function useToast() {
 /* ======================================================================= */
 /* App                                                                      */
 /* ======================================================================= */
-const VERSAO_APP = "v7.17";
+const VERSAO_APP = "v7.18";
 const CHAVE_TEMA = "preco-justo:tema";
 
 /* Rede de segurança: se qualquer aba travar por um motivo que eu não       */
@@ -1474,7 +1495,7 @@ function DiagnosticoSimples({ n, nd }) {
 /* Uma pessoa no cadastro de Profissionais (Bloco 4). O vínculo decide o que */
 /* ela informa: comissionado(a) → comissão e atendimentos; dono(a) → só os   */
 /* atendimentos (pesa na média com 0%); aluga cadeira → valor do aluguel.     */
-function LinhaProfissional({ p, onChange, onRemove }) {
+function LinhaProfissional({ p, onChange, onRemove, salaoMei = false }) {
   const t = useT();
   const vinculo = vinculoDe(p);
   const campoStyle = { background: t.surface, border: `1px solid ${t.border}`, color: t.text };
@@ -1503,6 +1524,10 @@ function LinhaProfissional({ p, onChange, onRemove }) {
           <CampoPct label="Comissão" value={p.comissaoPct ?? ""} onChange={(v) => onChange("comissaoPct", v)}
             ajuda="O percentual do preço de cada serviço que vai para essa pessoa." faq="comissao-parceiros" />
         )}
+        {vinculo === "parceiro" && (
+          <CampoPct label="Cota-parte do parceiro" value={p.comissaoPct ?? ""} onChange={(v) => onChange("comissaoPct", v)}
+            ajuda="O percentual de cada serviço que fica com o profissional-parceiro, como está no contrato de parceria. Essa parte não entra na receita do salão." faq="salao-parceiro" />
+        )}
         {vinculo === "aluguel" ? (
           <Campo label="Aluguel por mês" ajuda="Quanto essa pessoa paga por mês para usar a cadeira. Entra como receita do salão e reduz o custo fixo que os seus serviços precisam cobrir.">
             <CampoMoeda value={p.aluguelMes} onChange={(v) => onChange("aluguelMes", v)} />
@@ -1518,6 +1543,35 @@ function LinhaProfissional({ p, onChange, onRemove }) {
           Quem aluga cadeira fica com o valor dos próprios serviços: não entra na comissão média nem deve ser contado no
           número de profissionais da Capacidade produtiva.
         </p>
+      )}
+      {/* Bloco 11: requisitos para a cota-parte sair da receita do salão. */}
+      {vinculo === "parceiro" && (
+        <div className="space-y-1.5">
+          <label className="flex items-start gap-2 text-xs" style={{ color: t.text }}>
+            <input type="checkbox" className="mt-0.5" checked={!!p.temCnpj} onChange={(e) => onChange("temCnpj", e.target.checked)} />
+            <span>Tem CNPJ (MEI ou microempresa)</span>
+          </label>
+          <label className="flex items-start gap-2 text-xs" style={{ color: t.text }}>
+            <input type="checkbox" className="mt-0.5" checked={!!p.contratoHomologado} onChange={(e) => onChange("contratoHomologado", e.target.checked)} />
+            <span>Contrato de parceria escrito e homologado no sindicato (ou, sem sindicato, no Ministério do Trabalho)</span>
+          </label>
+          {salaoMei ? (
+            <p className="text-[11px] flex items-start gap-1" style={{ color: t.danger }}>
+              <AlertTriangle size={12} className="mt-0.5 shrink-0" />
+              <span>Salão MEI não pode ser salão-parceiro. A cota-parte entra nas contas como comissão comum.</span>
+            </p>
+          ) : parceiroValido(p) ? (
+            <p className="text-[11px] flex items-start gap-1" style={{ color: t.successText }}>
+              <CheckCircle2 size={12} className="mt-0.5 shrink-0" />
+              <span>A cota-parte fica fora da receita do salão: o imposto e a taxa da maquininha caem na proporção.</span>
+            </p>
+          ) : (
+            <p className="text-[11px] flex items-start gap-1" style={{ color: t.warningText }}>
+              <AlertTriangle size={12} className="mt-0.5 shrink-0" />
+              <span>Sem CNPJ e contrato homologado, a cota-parte entra nas contas como comissão comum.</span>
+            </p>
+          )}
+        </div>
       )}
     </div>
   );
@@ -2191,7 +2245,7 @@ function Negocio({ negocio, onSalvar, servicos, onCarregarExemplo }) {
           </p>
           <div className="space-y-2">
             {(n.profissionais || []).map((p) => (
-              <LinhaProfissional key={p.id} p={p}
+              <LinhaProfissional key={p.id} p={p} salaoMei={n.regime === "mei"}
                 onChange={(campo, valor) => updateProfissional(p.id, campo, valor)}
                 onRemove={() => removeProfissional(p.id)} />
             ))}
@@ -2210,6 +2264,17 @@ function Negocio({ negocio, onSalvar, servicos, onCarregarExemplo }) {
                 {nd.comissaoEquipe.ponderada
                   ? `Ponderada pelos atendimentos de ${nd.comissaoEquipe.participantes.length} pessoas. Quem atende mais pesa mais.`
                   : `Média simples de ${nd.comissaoEquipe.participantes.length} pessoas, porque falta o número de atendimentos de alguém. Preencha para a média ficar ponderada.`}
+              </p>
+            </div>
+          )}
+          {nd.temParceriaValida && (
+            <div className="pop-in rounded-xl p-3 mt-3 text-xs space-y-1" style={{ background: t.successSoft, color: t.successText }}>
+              <p className="font-semibold">Parceria (Lei do Salão-Parceiro)</p>
+              <p style={{ color: t.text }}>
+                A cota-parte dos parceiros com CNPJ e contrato homologado fica fora da receita bruta do salão. Na
+                Calculadora, o imposto e a taxa da maquininha entram só sobre a parte do salão. No Regime tributário,
+                informe o faturamento de 12 meses já sem as cotas repassadas.
+                <Ajuda faq="salao-parceiro" texto="A Lei 13.352/2016 permite que o salão repasse ao profissional-parceiro uma cota-parte que não conta como receita do salão. Toque em Entender melhor para os requisitos." />
               </p>
             </div>
           )}
@@ -2374,6 +2439,15 @@ function Negocio({ negocio, onSalvar, servicos, onCarregarExemplo }) {
                   <CampoMoeda value={n.folha12} onChange={(v) => setN({ ...n, folha12: v })} />
                 </Campo>
               </div>
+              {nd.temParceriaValida && (
+                <p className="text-[11px] flex items-start gap-1" style={{ color: t.primaryText }}>
+                  <Info size={12} className="mt-0.5 shrink-0" />
+                  <span>
+                    Com parceiros: a receita de 12 meses é a do salão, já sem as cotas-parte repassadas, e a folha não inclui
+                    os parceiros (eles não são empregados).
+                  </span>
+                </p>
+              )}
               <label className="flex items-start gap-2 text-xs rounded-xl p-2.5" style={{ background: t.surfaceAlt, color: t.textMuted }}>
                 <input type="checkbox" className="mt-0.5" checked={n.atividadeSempreAnexoIII}
                   onChange={(e) => setN({ ...n, atividadeSempreAnexoIII: e.target.checked })} />
@@ -3218,7 +3292,7 @@ function ResultadoReversoCard({ r, margemMetaPct, horas, diasMesNegocio }) {
 }
 
 /* Simulador de sensibilidade — colapsado, slider ±30% do preço informado. */
-function SimuladorSensibilidade({ precoBase, custosVariaveis, comissaoPct, taxaCartaoPct, horasPorAtendimento, atendimentosMes, nd }) {
+function SimuladorSensibilidade({ precoBase, custosVariaveis, comissaoPct, taxaCartaoPct, parcelaParceiroPct = 0, horasPorAtendimento, atendimentosMes, nd }) {
   const t = useT();
   const [aberto, setAberto] = useState(false);
   const [precoSimulado, setPrecoSimulado] = useState(precoBase || 0);
@@ -3229,7 +3303,7 @@ function SimuladorSensibilidade({ precoBase, custosVariaveis, comissaoPct, taxaC
 
   const min = Math.max(0, precoBase * 0.7);
   const max = precoBase * 1.3;
-  const r = calcularReverso({ custosVariaveis, comissaoPct, taxaCartaoPct, precoCobrado: precoSimulado, horasPorAtendimento, atendimentosMes, margemMetaPct: 0 }, nd);
+  const r = calcularReverso({ custosVariaveis, comissaoPct, taxaCartaoPct, parcelaParceiroPct, precoCobrado: precoSimulado, horasPorAtendimento, atendimentosMes, margemMetaPct: 0 }, nd);
 
   return (
     <div className="rounded-2xl p-5" style={{ background: t.surface, border: `1px solid ${t.border}`, boxShadow: t.shadow }}>
@@ -3462,6 +3536,7 @@ function Calculadora({ nd, negocioConfigurado, irParaNegocio, servicos, onSalvar
     comissaoModo: nd?.comissaoEquipe ? "equipe" : "propria",
     // ...e a taxa média de recebimento do negócio, quando ela existe (Bloco 5).
     taxaModo: nd?.taxaRecebimento ? "negocio" : "propria",
+    comissaoEhCotaParte: false, // Bloco 11: comissão própria que é cota-parte de parceiro
   };
 
   const [modo, setModo] = useState("descobrir"); // 'descobrir' | 'ja-tenho'
@@ -3475,6 +3550,7 @@ function Calculadora({ nd, negocioConfigurado, irParaNegocio, servicos, onSalvar
   const [comissaoModo, setComissaoModo] = useState(vazio.comissaoModo);
   const [taxaCartaoPct, setTaxaCartaoPct] = useState(vazio.taxaCartaoPct);
   const [taxaModo, setTaxaModo] = useState(vazio.taxaModo);
+  const [comissaoEhCotaParte, setComissaoEhCotaParte] = useState(vazio.comissaoEhCotaParte);
   const [margemPct, setMargemPct] = useState(vazio.margemPct);
   const [atendimentosMes, setAtendimentosMes] = useState(vazio.atendimentosMes);
   const [horasAtendimento, setHorasAtendimento] = useState(vazio.horasAtendimento);
@@ -3488,13 +3564,14 @@ function Calculadora({ nd, negocioConfigurado, irParaNegocio, servicos, onSalvar
 
   // "sujo" = tem algo digitado que ainda não foi salvo neste serviço.
   const rascunhoAtual = useMemo(() => ({
-    nome: nomeServico, categoria, tipo, custosVariaveis, comissaoPct, comissaoModo, taxaCartaoPct, taxaModo, margemPct,
+    nome: nomeServico, categoria, tipo, custosVariaveis, comissaoPct, comissaoModo, comissaoEhCotaParte, taxaCartaoPct, taxaModo, margemPct,
     atendimentosMes, horasAtendimento, modo, precoCobrado,
-  }), [nomeServico, categoria, tipo, custosVariaveis, comissaoPct, comissaoModo, taxaCartaoPct, taxaModo, margemPct, atendimentosMes, horasAtendimento, modo, precoCobrado]);
+  }), [nomeServico, categoria, tipo, custosVariaveis, comissaoPct, comissaoModo, comissaoEhCotaParte, taxaCartaoPct, taxaModo, margemPct, atendimentosMes, horasAtendimento, modo, precoCobrado]);
   const rascunhoBase = useMemo(() => servicoEmEdicao
     ? {
         nome: servicoEmEdicao.nome, categoria: servicoEmEdicao.categoria || "", tipo: servicoEmEdicao.tipo || "servico", custosVariaveis: servicoEmEdicao.custosVariaveis,
         comissaoPct: String(servicoEmEdicao.comissaoPct), comissaoModo: servicoEmEdicao.comissaoModo || "propria",
+        comissaoEhCotaParte: !!servicoEmEdicao.comissaoEhCotaParte,
         taxaCartaoPct: String(servicoEmEdicao.taxaCartaoPct), taxaModo: servicoEmEdicao.taxaModo || "propria",
         margemPct: String(servicoEmEdicao.margemPct),
         atendimentosMes: String(servicoEmEdicao.atendimentosMes), horasAtendimento: String(servicoEmEdicao.horasPorAtendimento),
@@ -3521,7 +3598,7 @@ function Calculadora({ nd, negocioConfigurado, irParaNegocio, servicos, onSalvar
       setModo(d.modo === "ja-tenho" ? "ja-tenho" : "descobrir");
       setNomeServico(d.nome || ""); setCategoria(d.categoria || ""); setTipo(d.tipo || "servico");
       if (Array.isArray(d.custosVariaveis)) setCustosVariaveis(d.custosVariaveis);
-      setComissaoPct(d.comissaoPct ?? vazio.comissaoPct); setComissaoModo(d.comissaoModo || "propria");
+      setComissaoPct(d.comissaoPct ?? vazio.comissaoPct); setComissaoModo(d.comissaoModo || "propria"); setComissaoEhCotaParte(!!d.comissaoEhCotaParte);
       setTaxaCartaoPct(d.taxaCartaoPct ?? vazio.taxaCartaoPct); setTaxaModo(d.taxaModo || "propria");
       setMargemPct(d.margemPct ?? vazio.margemPct);
       setAtendimentosMes(d.atendimentosMes ?? ""); setHorasAtendimento(d.horasAtendimento ?? vazio.horasAtendimento);
@@ -3557,6 +3634,7 @@ function Calculadora({ nd, negocioConfigurado, irParaNegocio, servicos, onSalvar
       setCustosVariaveis(servicoEmEdicao.custosVariaveis);
       setComissaoPct(String(servicoEmEdicao.comissaoPct));
       setComissaoModo(servicoEmEdicao.comissaoModo || "propria");
+      setComissaoEhCotaParte(!!servicoEmEdicao.comissaoEhCotaParte);
       setTaxaCartaoPct(String(servicoEmEdicao.taxaCartaoPct));
       setTaxaModo(servicoEmEdicao.taxaModo || "propria");
       setMargemPct(String(servicoEmEdicao.margemPct));
@@ -3577,7 +3655,7 @@ function Calculadora({ nd, negocioConfigurado, irParaNegocio, servicos, onSalvar
     setModo("descobrir");
     setPassoWizard(1);
     setCustosVariaveis(vazio.custosVariaveis.map((i) => ({ ...i, id: uid() })));
-    setComissaoPct(vazio.comissaoPct); setComissaoModo(vazio.comissaoModo); setTaxaCartaoPct(vazio.taxaCartaoPct); setTaxaModo(vazio.taxaModo); setMargemPct(vazio.margemPct);
+    setComissaoPct(vazio.comissaoPct); setComissaoModo(vazio.comissaoModo); setComissaoEhCotaParte(false); setTaxaCartaoPct(vazio.taxaCartaoPct); setTaxaModo(vazio.taxaModo); setMargemPct(vazio.margemPct);
     setAtendimentosMes(vazio.atendimentosMes); setHorasAtendimento(vazio.horasAtendimento);
     setNomeServico(vazio.nome); setCategoria(vazio.categoria); setTipo(vazio.tipo); setConfirmandoExclusaoForm(false);
     setPrecoCobrado(vazio.precoCobrado); setPrecoCobradoDebounced(vazio.precoCobrado);
@@ -3638,18 +3716,18 @@ function Calculadora({ nd, negocioConfigurado, irParaNegocio, servicos, onSalvar
 
   const resultadoA = useMemo(
     () => calcularServico({
-      custosVariaveis, comissaoPct, comissaoModo, taxaCartaoPct, taxaModo, margemPct,
+      custosVariaveis, comissaoPct, comissaoModo, comissaoEhCotaParte, taxaCartaoPct, taxaModo, margemPct,
       horasPorAtendimento: horasAtendimento, atendimentosMes: N(atendimentosMes),
     }, nd),
-    [custosVariaveis, comissaoPct, comissaoModo, taxaCartaoPct, taxaModo, margemPct, horasAtendimento, atendimentosMes, nd]
+    [custosVariaveis, comissaoPct, comissaoModo, comissaoEhCotaParte, taxaCartaoPct, taxaModo, margemPct, horasAtendimento, atendimentosMes, nd]
   );
 
   const resultadoB = useMemo(
     () => calcularReverso({
-      custosVariaveis, comissaoPct, comissaoModo, taxaCartaoPct, taxaModo, precoCobrado: precoCobradoDebounced,
+      custosVariaveis, comissaoPct, comissaoModo, comissaoEhCotaParte, taxaCartaoPct, taxaModo, precoCobrado: precoCobradoDebounced,
       horasPorAtendimento: horasAtendimento, atendimentosMes: N(atendimentosMes), margemMetaPct: margemPct,
     }, nd),
-    [custosVariaveis, comissaoPct, comissaoModo, taxaCartaoPct, taxaModo, precoCobradoDebounced, horasAtendimento, atendimentosMes, margemPct, nd]
+    [custosVariaveis, comissaoPct, comissaoModo, comissaoEhCotaParte, taxaCartaoPct, taxaModo, precoCobradoDebounced, horasAtendimento, atendimentosMes, margemPct, nd]
   );
 
   const resultadoAtivo = modo === "ja-tenho" ? resultadoB : resultadoA;
@@ -3657,6 +3735,8 @@ function Calculadora({ nd, negocioConfigurado, irParaNegocio, servicos, onSalvar
   const comissaoUsada = comissaoEfetiva({ comissaoPct, comissaoModo }, nd);
   // Idem para a taxa de cartão (média do negócio ou a própria do serviço).
   const taxaUsada = taxaEfetiva({ taxaCartaoPct, taxaModo }, nd);
+  // Bloco 11: parte do preço que é cota-parte de parceiro (imposto e taxa caem na proporção).
+  const parcelaAtual = parcelaParceiro({ comissaoPct, comissaoModo, comissaoEhCotaParte }, nd);
 
   // "Preço salvo" recalculado ao vivo com os parâmetros ORIGINAIS (sem as edições em
   // andamento), no MODO em que o serviço foi salvo, contra a config. atual do negócio.
@@ -3674,7 +3754,7 @@ function Calculadora({ nd, negocioConfigurado, irParaNegocio, servicos, onSalvar
     criadoEm: (!idNovo && servicoEmEdicao) ? servicoEmEdicao.criadoEm : Date.now(),
     editadoEm: Date.now(),
     modo,
-    custosVariaveis, comissaoPct: N(comissaoPct), comissaoModo, taxaCartaoPct: N(taxaCartaoPct), taxaModo, margemPct: N(margemPct),
+    custosVariaveis, comissaoPct: N(comissaoPct), comissaoModo, comissaoEhCotaParte: comissaoModo === "propria" && comissaoEhCotaParte, taxaCartaoPct: N(taxaCartaoPct), taxaModo, margemPct: N(margemPct),
     horasPorAtendimento: N(horasAtendimento), atendimentosMes: N(atendimentosMes),
     precoCobrado: modo === "ja-tenho" ? N(precoCobradoDebounced) : null,
     precoConfirmado: resultadoAtivo.status === "ok" ? resultadoAtivo.preco : null,
@@ -3825,7 +3905,8 @@ function Calculadora({ nd, negocioConfigurado, irParaNegocio, servicos, onSalvar
             <BlocoComissaoETaxa nd={nd} comissaoPct={comissaoPct} setComissaoPct={setComissaoPct}
               comissaoModo={comissaoModo} setComissaoModo={setComissaoModo}
               taxaCartaoPct={taxaCartaoPct} setTaxaCartaoPct={setTaxaCartaoPct}
-              taxaModo={taxaModo} setTaxaModo={setTaxaModo} />
+              taxaModo={taxaModo} setTaxaModo={setTaxaModo}
+              comissaoEhCotaParte={comissaoEhCotaParte} setComissaoEhCotaParte={setComissaoEhCotaParte} parcelaAtual={parcelaAtual} />
             <CampoPct label="Margem de lucro desejada (meta)" value={margemPct} onChange={setMargemPct}
               ajuda="Quanto você quer que sobre de lucro de verdade, depois de pagar tudo — não é o preço final, é a fatia que fica com você." faq="margem-contribuicao" />
 
@@ -3845,8 +3926,8 @@ function Calculadora({ nd, negocioConfigurado, irParaNegocio, servicos, onSalvar
             )}
 
             <div className="rounded-xl p-2.5 text-xs flex items-center justify-between" style={{ background: t.surfaceAlt, color: t.textMuted }}>
-              <span>Imposto sobre este preço (do regime configurado)</span>
-              <span className="font-num font-medium">{fmtPct(nd.impostoPct, 2)}</span>
+              <span>Imposto sobre este preço (do regime configurado){parcelaAtual > 0 ? ", só sobre a parte do salão" : ""}</span>
+              <span className="font-num font-medium">{fmtPct(nd.impostoPct * (1 - parcelaAtual / 100), 2)}</span>
             </div>
 
             <div>
@@ -3921,7 +4002,7 @@ function Calculadora({ nd, negocioConfigurado, irParaNegocio, servicos, onSalvar
                 )}
                 {resultadoB.status === "ok" && (
                   <SimuladorSensibilidade
-                    precoBase={resultadoB.preco} custosVariaveis={custosVariaveis} comissaoPct={comissaoUsada} taxaCartaoPct={taxaUsada}
+                    precoBase={resultadoB.preco} custosVariaveis={custosVariaveis} comissaoPct={comissaoUsada} taxaCartaoPct={taxaUsada} parcelaParceiroPct={parcelaAtual}
                     horasPorAtendimento={horasAtendimento} atendimentosMes={N(atendimentosMes)} nd={nd}
                   />
                 )}
@@ -4074,7 +4155,8 @@ function Calculadora({ nd, negocioConfigurado, irParaNegocio, servicos, onSalvar
               <BlocoComissaoETaxa nd={nd} comissaoPct={comissaoPct} setComissaoPct={setComissaoPct}
                 comissaoModo={comissaoModo} setComissaoModo={setComissaoModo}
                 taxaCartaoPct={taxaCartaoPct} setTaxaCartaoPct={setTaxaCartaoPct}
-                taxaModo={taxaModo} setTaxaModo={setTaxaModo} />
+                taxaModo={taxaModo} setTaxaModo={setTaxaModo}
+                comissaoEhCotaParte={comissaoEhCotaParte} setComissaoEhCotaParte={setComissaoEhCotaParte} parcelaAtual={parcelaAtual} />
               {modo === "descobrir" ? (
                 <CampoPct label="Margem de lucro desejada (meta)" value={margemPct} onChange={setMargemPct}
                   ajuda="Quanto você quer que sobre de lucro de verdade, depois de pagar tudo — não é o preço final, é a fatia que fica com você." faq="margem-contribuicao" />
@@ -4097,8 +4179,8 @@ function Calculadora({ nd, negocioConfigurado, irParaNegocio, servicos, onSalvar
                 </>
               )}
               <div className="rounded-xl p-2.5 text-xs flex items-center justify-between" style={{ background: t.surfaceAlt, color: t.textMuted }}>
-                <span>Imposto sobre este preço (do regime configurado)</span>
-                <span className="font-num font-medium">{fmtPct(nd.impostoPct, 2)}</span>
+                <span>Imposto sobre este preço (do regime configurado){parcelaAtual > 0 ? ", só sobre a parte do salão" : ""}</span>
+                <span className="font-num font-medium">{fmtPct(nd.impostoPct * (1 - parcelaAtual / 100), 2)}</span>
               </div>
             </div>
           )}
@@ -4131,7 +4213,7 @@ function Calculadora({ nd, negocioConfigurado, irParaNegocio, servicos, onSalvar
                   )}
                   {resultadoB.status === "ok" && (
                     <SimuladorSensibilidade
-                      precoBase={resultadoB.preco} custosVariaveis={custosVariaveis} comissaoPct={comissaoUsada} taxaCartaoPct={taxaUsada}
+                      precoBase={resultadoB.preco} custosVariaveis={custosVariaveis} comissaoPct={comissaoUsada} taxaCartaoPct={taxaUsada} parcelaParceiroPct={parcelaAtual}
                       horasPorAtendimento={horasAtendimento} atendimentosMes={N(atendimentosMes)} nd={nd}
                     />
                   )}
@@ -4424,7 +4506,11 @@ function Painel({ nd, negocio, servicos, onRemoverServico, onEditarServico }) {
     const wb = XLSX.utils.book_new();
     const wsDRE = XLSX.utils.aoa_to_sheet([
       ["DRE gerencial do mês (recalculado com as configurações atuais)", ""],
-      ["Receita bruta", dre.receitaBruta],
+      ...(dre.cotaParteParceiros > 0 ? [
+        ["Valor cobrado dos clientes", dre.valorCobrado],
+        ["(-) Cota-parte repassada aos parceiros", -dre.cotaParteParceiros],
+      ] : []),
+      [dre.cotaParteParceiros > 0 ? "= Receita bruta do salão" : "Receita bruta", dre.receitaBruta],
       ["(-) Impostos sobre vendas", -dre.impostos],
       ["= Receita líquida", dre.receitaLiquida],
       ["(-) Custos variáveis totais", -dre.custosVariaveisTotais],
@@ -4491,7 +4577,8 @@ function Painel({ nd, negocio, servicos, onRemoverServico, onEditarServico }) {
     const texto = [
       "📊 Preço Justo — Resumo do negócio",
       "",
-      `Receita bruta: ${fmtBRL(dre.receitaBruta)}`,
+      ...(dre.cotaParteParceiros > 0 ? [`Valor cobrado dos clientes: ${fmtBRL(dre.valorCobrado)}`, `Cota-parte dos parceiros: ${fmtBRL(dre.cotaParteParceiros)}`] : []),
+      `Receita bruta${dre.cotaParteParceiros > 0 ? " do salão" : ""}: ${fmtBRL(dre.receitaBruta)}`,
       `Custos variáveis: ${fmtBRL(dre.custosVariaveisTotais)}`,
       `Custos fixos: ${fmtBRL(dre.custosFixos)}`,
       ...(dre.aluguelRecebido > 0 ? [`Aluguel de cadeiras recebido: ${fmtBRL(dre.aluguelRecebido)}`] : []),
@@ -4811,7 +4898,11 @@ function MemorialCalculo({ negocio, nd, dre, peContabilRS, peFinanceiroRS, peEco
       <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse" }}>
         <tbody>
           {[
-            ["Receita bruta", dre.receitaBruta, true],
+            ...(dre.cotaParteParceiros > 0 ? [
+              ["Valor cobrado dos clientes", dre.valorCobrado, false],
+              ["(–) Cota-parte repassada aos parceiros", -dre.cotaParteParceiros, false],
+            ] : []),
+            [dre.cotaParteParceiros > 0 ? "= Receita bruta do salão" : "Receita bruta", dre.receitaBruta, true],
             ["(–) Impostos sobre vendas", -dre.impostos, false],
             ["= Receita líquida", dre.receitaLiquida, true],
             ["(–) Custos variáveis totais", -dre.custosVariaveisTotais, false],
@@ -4841,8 +4932,14 @@ function MemorialCalculo({ negocio, nd, dre, peContabilRS, peFinanceiroRS, peEco
 /* botão "carregar exemplo" — nunca pode aparecer como dado real).         */
 function DRECard({ dre, origem = "projecao", mesLabel }) {
   const t = useT();
+  // Bloco 11: com parceiros, começa no valor cobrado e desconta a cota-parte.
+  const comParceiros = N(dre.cotaParteParceiros) > 0;
   const linhas = [
-    { label: "Receita bruta", valor: dre.receitaBruta, forte: true },
+    ...(comParceiros ? [
+      { label: "Valor cobrado dos clientes", valor: dre.valorCobrado },
+      { label: "(–) Cota-parte repassada aos parceiros", valor: -dre.cotaParteParceiros },
+    ] : []),
+    { label: comParceiros ? "= Receita bruta do salão" : "Receita bruta", valor: dre.receitaBruta, forte: true },
     { label: "(–) Impostos sobre vendas", valor: -dre.impostos },
     { label: "= Receita líquida", valor: dre.receitaLiquida, sub: true },
     { label: "(–) Custos variáveis totais", valor: -dre.custosVariaveisTotais },
@@ -5302,9 +5399,13 @@ function FormularioFechamento({ mes, nd, servicos, profissionais, registroExiste
       const valorUnitarioUsado = valorUnitarioReal ?? calc.preco;
       const receita = quantidade * valorUnitarioUsado;
       const custoMaterial = quantidade * calc.totalVariaveis;
-      const custoComissao = receita * (comissaoEfetiva(s, nd) / 100);
-      const custoTaxaCartao = receita * (taxaEfetiva(s, nd) / 100);
-      return { servicoId: s.id, nome: s.nome, quantidade, receita, valorUnitarioUsado, estimado: valorUnitarioReal == null, custoMaterial, custoComissao, custoTaxaCartao };
+      // Bloco 11: a cota-parte de parceiro sai da comissão (vai para a dedução da
+      // receita) e a taxa da maquininha fica só sobre a parte do salão.
+      const parcela = parcelaParceiro(s, nd);
+      const cotaParte = receita * (parcela / 100);
+      const custoComissao = receita * ((comissaoEfetiva(s, nd) - parcela) / 100);
+      const custoTaxaCartao = receita * (taxaEfetiva(s, nd) / 100) * (1 - parcela / 100);
+      return { servicoId: s.id, nome: s.nome, quantidade, receita, valorUnitarioUsado, estimado: valorUnitarioReal == null, custoMaterial, custoComissao, custoTaxaCartao, cotaParte };
     }).filter(Boolean);
   }, [mostrarPorServico, detalhe, servicosValidos, nd]);
 
@@ -5321,9 +5422,16 @@ function FormularioFechamento({ mes, nd, servicos, profissionais, registroExiste
 
   const custosFixosSnapshot = nd.custoFixoTotal;
   const aluguelRecebidoSnapshot = N(nd.receitaAluguelCadeiras);
-  const impostoEstimado = faturamento * (nd.impostoPct / 100);
+  // Bloco 11: cota-parte repassada aos parceiros no mês. Com o detalhamento por
+  // serviço, vem dele; sem ele, do faturamento informado por profissional.
+  const cotaParteSnapshot = mostrarPorServico && detalhamento.length > 0
+    ? detalhamento.reduce((s, d) => s + d.cotaParte, 0)
+    : mostrarPorProfissional && nd.parceriaPermitida
+      ? profissionaisAtivos.filter((p) => parceiroValido(p)).reduce((s, p) => s + N(divisaoProfissional[p.id]?.valorTotal) * (N(p.comissaoPct) / 100), 0)
+      : 0;
+  const impostoEstimado = (faturamento - cotaParteSnapshot) * (nd.impostoPct / 100);
   const custosVariaveisUsados = custosVariaveisReais ?? 0;
-  const lucroLiquidoCalculado = faturamento - custosVariaveisUsados - custosFixosSnapshot + aluguelRecebidoSnapshot - impostoEstimado;
+  const lucroLiquidoCalculado = faturamento - cotaParteSnapshot - custosVariaveisUsados - custosFixosSnapshot + aluguelRecebidoSnapshot - impostoEstimado;
   const margemLiquidaPctCalculada = faturamento > 0 ? (lucroLiquidoCalculado / faturamento) * 100 : 0;
   const valido = faturamento > 0 && atendimentosTotais > 0;
 
@@ -5351,6 +5459,7 @@ function FormularioFechamento({ mes, nd, servicos, profissionais, registroExiste
       custosVariaveisReaisInformados: custosVariaveisReais,
       custosFixosSnapshot,
       aluguelRecebidoSnapshot,
+      cotaParteSnapshot,
       impostoPagoReal: impostoEstimado,
       proLaboreRealPago: nd.proLabore,
       observacoes,
@@ -5484,6 +5593,9 @@ function FormularioFechamento({ mes, nd, servicos, profissionais, registroExiste
 
       {faturamento > 0 && (
         <div className="rounded-lg p-2.5 text-xs" style={{ background: t.surfaceAlt, border: `1px solid ${t.border}` }}>
+          {cotaParteSnapshot > 0 && (
+            <div className="flex justify-between"><span style={{ color: t.textMuted }}>Cota-parte dos parceiros</span><span className="font-num">−{fmtBRL(cotaParteSnapshot)}</span></div>
+          )}
           <div className="flex justify-between"><span style={{ color: t.textMuted }}>Custo fixo (config. atual)</span><span className="font-num">{fmtBRL(custosFixosSnapshot)}</span></div>
           {aluguelRecebidoSnapshot > 0 && (
             <div className="flex justify-between"><span style={{ color: t.textMuted }}>Aluguel de cadeiras recebido</span><span className="font-num">+{fmtBRL(aluguelRecebidoSnapshot)}</span></div>
@@ -5492,7 +5604,7 @@ function FormularioFechamento({ mes, nd, servicos, profissionais, registroExiste
             <span style={{ color: t.textMuted }}>Custo variável {mostrarPorServico ? "(real)" : "(não informado)"}</span>
             <span className="font-num">{fmtBRL(custosVariaveisUsados)}</span>
           </div>
-          <div className="flex justify-between"><span style={{ color: t.textMuted }}>Imposto estimado ({fmtPct(nd.impostoPct)})</span><span className="font-num">{fmtBRL(impostoEstimado)}</span></div>
+          <div className="flex justify-between"><span style={{ color: t.textMuted }}>Imposto estimado ({fmtPct(nd.impostoPct)}{cotaParteSnapshot > 0 ? " sobre a parte do salão" : ""})</span><span className="font-num">{fmtBRL(impostoEstimado)}</span></div>
           <div
             className="flex justify-between font-semibold pt-1.5 mt-1"
             style={{ borderTop: `1px solid ${t.border}`, color: lucroLiquidoCalculado >= 0 ? t.successText : t.danger }}
@@ -5716,9 +5828,10 @@ function margensPorServicoNoFechamento(fechamento, servicos, nd) {
     if (calc.status !== "ok") return;
     const receita = d.valorReal != null ? d.valorReal : d.quantidade * calc.preco;
     const custoMaterial = d.quantidade * calc.totalVariaveis;
-    const custoComissao = receita * (comissaoEfetiva(servico, nd) / 100);
-    const custoTaxaCartao = receita * (taxaEfetiva(servico, nd) / 100);
-    const custoImposto = receita * (nd.impostoPct / 100);
+    const custoComissao = receita * (comissaoEfetiva(servico, nd) / 100); // inclui a cota-parte de parceiro
+    const fatorSalao = 1 - parcelaParceiro(servico, nd) / 100; // Bloco 11
+    const custoTaxaCartao = receita * (taxaEfetiva(servico, nd) / 100) * fatorSalao;
+    const custoImposto = receita * (nd.impostoPct / 100) * fatorSalao;
     resultado[id] = {
       nome: servico.nome, categoria: servico.categoria || "Outros", tipo: servico.tipo || "servico", quantidade: d.quantidade,
       receita, temReceitaReal: d.valorReal != null,
@@ -7058,6 +7171,21 @@ const FAQ_DADOS = [
             { titulo: "Mediana abaixo do seu piso", texto: `baixar até ela daria prejuízo. O caminho é rever custos e tempo do serviço, não acompanhar o preço.` },
           ] },
           { tipo: "exemplo", texto: `Números só para ilustrar: se o seu corte custa R$ 35, o seu piso é R$ 28 e a mediana de cinco barbearias anotadas num raio de 3 km é R$ 30, você está acima da região, mas com folga sobre o custo. Descer para R$ 30 ainda daria lucro, só que menor; descer para R$ 25 daria prejuízo em cada corte.` },
+        ],
+      },
+      {
+        id: "salao-parceiro",
+        pergunta: "Como funciona a Lei do Salão-Parceiro, e o que muda no preço?",
+        blocos: [
+          { tipo: "texto", texto: `A Lei 13.352/2016 incluiu na Lei 12.592/2012 o contrato de parceria entre salões e profissionais da beleza. O salão-parceiro recebe o pagamento do cliente, fica com a sua cota e repassa ao profissional-parceiro a cota-parte dele. Essa cota-parte não integra a receita bruta do salão, mesmo quando a nota fiscal ao cliente é uma só (art. 1º-A, §5º).` },
+          { tipo: "lista", itens: [
+            { titulo: "Contrato", texto: `escrito, assinado perante duas testemunhas e homologado pelo sindicato da categoria ou, na falta dele, pelo órgão local do Ministério do Trabalho (§8º). Sem contrato, ou com o profissional fazendo funções fora dele, há vínculo de emprego (art. 1º-C).` },
+            { titulo: "CNPJ do parceiro", texto: `a lei permite (§7º), e as regras do Simples Nacional exigem o CNPJ do parceiro para o repasse sair da receita do salão.` },
+            { titulo: "Salão", texto: `precisa ser microempresa ou empresa de pequeno porte: salão MEI não pode ser salão-parceiro.` },
+          ] },
+          { tipo: "texto", texto: `No app, a cota-parte dos parceiros que cumprem esses requisitos sai da receita do salão. Por isso o imposto e a taxa da maquininha (dividida pela cota) entram no preço só sobre a parte do salão, e o DRE começa no valor cobrado dos clientes, desconta a cota-parte e chega à receita bruta do salão.` },
+          { tipo: "formula", texto: `Preço = (custo fixo rateado + custo variável) ÷ (1 − comissão − taxa × (1 − cota) − imposto × (1 − cota) − margem)` },
+          { tipo: "exemplo", texto: `Números do exemplo do app: corte com R$ 3,00 de produto, meia hora de cadeira, parceiro com 40% de cota, Simples de 6%, maquininha de 3% e margem de 25%. Com a parceria, o imposto fica em 3,6% do preço e a taxa em 1,8%, e o preço sai R$ 24,59. Tratando os 40% como comissão comum, o preço seria R$ 28,00. Confirme com seu contador o enquadramento do contrato antes de usar.` },
         ],
       },
       {

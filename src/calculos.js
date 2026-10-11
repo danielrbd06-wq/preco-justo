@@ -73,29 +73,55 @@ export const VINCULOS_PROFISSIONAL = [
   { id: "comissao", label: "Comissionado(a)" },
   { id: "dono", label: "Dono(a) / sem comissão" },
   { id: "aluguel", label: "Aluga cadeira" },
+  { id: "parceiro", label: "Profissional-parceiro" },
 ];
 
 export const vinculoDe = (p) => p?.vinculo || "comissao";
+
+/* Lei do Salão-Parceiro (Bloco 11) — Lei 12.592/2012, art. 1º-A, com a     */
+/* redação da Lei 13.352/2016. A cota-parte do profissional-parceiro não     */
+/* integra a receita bruta do salão (§5º). Para isso valer aqui, o parceiro  */
+/* precisa de CNPJ (regra do Simples Nacional, Resolução CGSN) e de contrato */
+/* escrito e homologado (§8º); sem contrato, há vínculo de emprego (art.     */
+/* 1º-C). Salão MEI não pode ser salão-parceiro.                             */
+export const parceiroValido = (p) => vinculoDe(p) === "parceiro" && !!p.temCnpj && !!p.contratoHomologado;
 
 /* Comissão média da equipe, ponderada pelos atendimentos de cada pessoa que */
 /* atende pelo salão (comissionados e dono). Quem aluga cadeira fica de fora: */
 /* o serviço dele não é receita do salão. Se faltar o número de atendimentos */
 /* de alguém, usa média simples e avisa (ponderada: false).                  */
-export function calcularComissaoEquipe(profissionais) {
+export function calcularComissaoEquipe(profissionais, { parceriaPermitida = true } = {}) {
+  const comPct = (p) => String(p.comissaoPct ?? "").trim() !== "";
   const participantes = (profissionais || [])
     .filter((p) => p.ativo !== false && (p.nome || "").trim())
-    .filter((p) => (vinculoDe(p) === "comissao" && String(p.comissaoPct ?? "").trim() !== "") || vinculoDe(p) === "dono")
+    .filter((p) => ((vinculoDe(p) === "comissao" || vinculoDe(p) === "parceiro") && comPct(p)) || vinculoDe(p) === "dono")
     .map((p) => ({
       id: p.id, nome: p.nome.trim(), vinculo: vinculoDe(p),
       pct: vinculoDe(p) === "dono" ? 0 : Math.min(99, Math.max(0, N(p.comissaoPct))),
       atendimentos: Math.max(0, N(p.atendimentosMes)),
+      // Bloco 11: cota-parte que sai da receita do salão (parceiro válido em salão que não é MEI).
+      cotaForaDaReceita: parceriaPermitida && parceiroValido(p),
     }));
-  const temComissionado = participantes.some((p) => p.vinculo === "comissao");
+  const temComissionado = participantes.some((p) => p.vinculo === "comissao" || p.vinculo === "parceiro");
   if (participantes.length < 2 || !temComissionado) return null;
   const ponderada = participantes.every((p) => p.atendimentos > 0);
   const somaPesos = ponderada ? participantes.reduce((s, p) => s + p.atendimentos, 0) : participantes.length;
-  const pct = participantes.reduce((s, p) => s + p.pct * (ponderada ? p.atendimentos : 1), 0) / somaPesos;
-  return { pct, ponderada, participantes };
+  const peso = (p) => (ponderada ? p.atendimentos : 1);
+  const pct = participantes.reduce((s, p) => s + p.pct * peso(p), 0) / somaPesos;
+  // Parte da média que é cota-parte de parceiro (fica fora da receita bruta do salão).
+  const parcelaParceiroPct = participantes.reduce((s, p) => s + (p.cotaForaDaReceita ? p.pct * peso(p) : 0), 0) / somaPesos;
+  return { pct, ponderada, participantes, parcelaParceiroPct };
+}
+
+/* Quanto do preço de um serviço é cota-parte de parceiro, em % (Bloco 11):  */
+/* com a média da equipe, a parte dos parceiros válidos na média; com        */
+/* comissão própria marcada como cota-parte, a comissão inteira; senão, 0.   */
+export function parcelaParceiro(servico, nd) {
+  // Valor já resolvido por quem chama (ex.: simulador de sensibilidade).
+  if (servico?.parcelaParceiroPct != null) return Math.min(99, Math.max(0, N(servico.parcelaParceiroPct)));
+  if (servico?.comissaoModo === "equipe" && nd?.comissaoEquipe) return N(nd.comissaoEquipe.parcelaParceiroPct);
+  if (servico?.comissaoEhCotaParte && nd?.temParceriaValida) return Math.min(99, Math.max(0, N(servico.comissaoPct)));
+  return 0;
 }
 
 /* Comissão que de fato entra no preço de um serviço: a média da equipe, se  */
@@ -161,7 +187,10 @@ export function computeNegocioDerivado(n) {
     .reduce((s, p) => s + N(p.aluguelMes), 0);
   const custoFixoLiquido = Math.max(0, custoFixoTotal - receitaAluguelCadeiras);
   const custoFixoPorHora = horasTotais > 0 ? custoFixoLiquido / horasTotais : 0;
-  const comissaoEquipe = calcularComissaoEquipe(n.profissionais);
+  // Bloco 11: salão MEI não pode ser salão-parceiro.
+  const parceriaPermitida = n.regime !== "mei";
+  const comissaoEquipe = calcularComissaoEquipe(n.profissionais, { parceriaPermitida });
+  const temParceriaValida = parceriaPermitida && (n.profissionais || []).some((p) => p.ativo !== false && parceiroValido(p));
   const recebimento = calcularTaxaRecebimento(n.recebimento);
   const taxaRecebimento = recebimento?.completo ? recebimento : null;
 
@@ -178,7 +207,7 @@ export function computeNegocioDerivado(n) {
 
   return {
     custosFixosSoma, proLabore, meiDas, custoFixoTotal, custoFixoNaoCaixa,
-    receitaAluguelCadeiras, custoFixoLiquido, comissaoEquipe, taxaRecebimento,
+    receitaAluguelCadeiras, custoFixoLiquido, comissaoEquipe, taxaRecebimento, parceriaPermitida, temParceriaValida,
     horasTotais, custoFixoPorHora, impostoPct, fatorR, anexoUsado, aliqInfo,
     numeroProfissionais: Math.max(1, N(n.numeroProfissionais) || 1),
     diasMes: N(n.diasMes),
@@ -264,12 +293,17 @@ export function somaCustosVariaveis(custosVariaveis, contexto) {
 /* de "totalVariaveis" ficou inteligente)                                  */
 /* ======================================================================= */
 
-export function calcularServico({ custosVariaveis, comissaoPct: comissaoInformada, comissaoModo, taxaCartaoPct: taxaInformada, taxaModo, margemPct, horasPorAtendimento, atendimentosMes }, nd) {
+export function calcularServico({ custosVariaveis, comissaoPct: comissaoInformada, comissaoModo, comissaoEhCotaParte, parcelaParceiroPct: parcelaInformada, taxaCartaoPct: taxaInformada, taxaModo, margemPct, horasPorAtendimento, atendimentosMes }, nd) {
   if (!nd || !nd.horasTotais) return { status: "sem-negocio" };
   const comissaoPct = comissaoEfetiva({ comissaoPct: comissaoInformada, comissaoModo }, nd);
-  const taxaCartaoPct = taxaEfetiva({ taxaCartaoPct: taxaInformada, taxaModo }, nd);
+  const taxaInformadaOuMedia = taxaEfetiva({ taxaCartaoPct: taxaInformada, taxaModo }, nd);
+  // Bloco 11: a cota-parte do parceiro fica fora da receita do salão. O imposto e a
+  // taxa da maquininha (dividida pela cota) incidem só sobre a parte do salão.
+  const parcelaParceiroPct = parcelaParceiro({ comissaoPct: comissaoInformada, comissaoModo, comissaoEhCotaParte, parcelaParceiroPct: parcelaInformada }, nd);
+  const fatorSalao = 1 - parcelaParceiroPct / 100;
+  const taxaCartaoPct = taxaInformadaOuMedia * fatorSalao;
   const totalVariaveis = somaCustosVariaveis(custosVariaveis, { atendimentosMes, diasMesNegocio: nd.diasMes, insumosCompartilhados: nd.insumosCompartilhados });
-  const imposto = nd.impostoPct;
+  const imposto = nd.impostoPct * fatorSalao;
   const soma = N(comissaoPct) + N(taxaCartaoPct) + imposto + N(margemPct);
 
   if (atendimentosMes <= 0) return { status: "sem-volume" };
@@ -284,12 +318,14 @@ export function calcularServico({ custosVariaveis, comissaoPct: comissaoInformad
   const valorTaxaCartao = preco * (N(taxaCartaoPct) / 100);
   const valorImposto = preco * (imposto / 100);
   const valorMargem = preco * (N(margemPct) / 100);
+  const valorCotaParte = preco * (parcelaParceiroPct / 100); // parte de valorComissao que é cota de parceiro
   const margemContribuicaoUnitaria = preco - valorImposto - totalVariaveis - valorComissao - valorTaxaCartao;
   const lucroProjetadoMes = valorMargem * atendimentosMes;
   const pontoEquilibrioServico = margemContribuicaoUnitaria > 0 ? nd.custoFixoLiquido / margemContribuicaoUnitaria : Infinity;
 
   return {
     status: "ok", totalVariaveis, custoFixoRateado, preco, comissaoPct, taxaCartaoPct,
+    parcelaParceiroPct, impostoSobrePrecoPct: imposto, valorCotaParte,
     valorComissao, valorTaxaCartao, valorImposto, valorMargem,
     margemContribuicaoUnitaria, lucroProjetadoMes, pontoEquilibrioServico,
   };
@@ -318,19 +354,23 @@ export function pontoEquilibrioSemanal(mensal, _diasMesNegocioNaoUsado) {
 /* Verificado numericamente que os dois modos batem exatamente (ver PR).   */
 /* ======================================================================= */
 
-export function calcularReverso({ custosVariaveis, comissaoPct: comissaoInformada, comissaoModo, taxaCartaoPct: taxaInformada, taxaModo, precoCobrado, horasPorAtendimento, atendimentosMes, margemMetaPct }, nd) {
+export function calcularReverso({ custosVariaveis, comissaoPct: comissaoInformada, comissaoModo, comissaoEhCotaParte, parcelaParceiroPct: parcelaInformada, taxaCartaoPct: taxaInformada, taxaModo, precoCobrado, horasPorAtendimento, atendimentosMes, margemMetaPct }, nd) {
   if (!nd || !nd.horasTotais) return { status: "sem-negocio" };
   const comissaoPct = comissaoEfetiva({ comissaoPct: comissaoInformada, comissaoModo }, nd);
-  const taxaCartaoPct = taxaEfetiva({ taxaCartaoPct: taxaInformada, taxaModo }, nd);
+  // Bloco 11: mesma regra do Modo A para a cota-parte do parceiro.
+  const parcelaParceiroPct = parcelaParceiro({ comissaoPct: comissaoInformada, comissaoModo, comissaoEhCotaParte, parcelaParceiroPct: parcelaInformada }, nd);
+  const fatorSalao = 1 - parcelaParceiroPct / 100;
+  const taxaCartaoPct = taxaEfetiva({ taxaCartaoPct: taxaInformada, taxaModo }, nd) * fatorSalao;
   const preco = N(precoCobrado);
   if (preco <= 0) return { status: "sem-preco" };
 
   const totalVariaveis = somaCustosVariaveis(custosVariaveis, { atendimentosMes, diasMesNegocio: nd.diasMes, insumosCompartilhados: nd.insumosCompartilhados });
   const horas = N(horasPorAtendimento);
-  const imposto = nd.impostoPct;
+  const imposto = nd.impostoPct * fatorSalao;
   const custoFixoRateado = nd.custoFixoPorHora * horas;
 
   const valorComissao = preco * (N(comissaoPct) / 100);
+  const valorCotaParte = preco * (parcelaParceiroPct / 100);
   const valorTaxaCartao = preco * (N(taxaCartaoPct) / 100);
   const valorImposto = preco * (imposto / 100);
   const custoTotal = custoFixoRateado + totalVariaveis + valorComissao + valorTaxaCartao + valorImposto;
@@ -358,7 +398,7 @@ export function calcularReverso({ custosVariaveis, comissaoPct: comissaoInformad
   if (lucroLiquido >= 0) diagnostico = margemLiquidaPct >= N(margemMetaPct) ? "saudavel" : "apertado";
 
   return {
-    status: "ok", diagnostico, comissaoPct, taxaCartaoPct,
+    status: "ok", diagnostico, comissaoPct, taxaCartaoPct, parcelaParceiroPct, impostoSobrePrecoPct: imposto, valorCotaParte,
     preco, totalVariaveis, custoFixoRateado, valorComissao, valorTaxaCartao, valorImposto,
     custoTotal, lucroBruto, lucroLiquido, margemLiquidaPct, markup, lucroPorHora,
     margemContribuicaoUnitaria, pontoEquilibrioServico, precoMinimo, precoIdeal, lucroProjetadoMes,
@@ -392,7 +432,12 @@ export function calcularParaExibicao(servico, nd) {
 /* fica "congelada": se você mudar custo fixo ou regime tributário mês que vem, o   */
 /* DRE de meses passados continua mostrando o que era real naquele mês.            */
 export function montarDREMensal(fechamento) {
-  const receitaBruta = N(fechamento.faturamentoBruto);
+  // Bloco 11: com parceiros, o faturamento é o valor cobrado dos clientes; a
+  // receita bruta do salão é ele menos a cota-parte repassada. Fechamentos
+  // antigos não têm cotaParteSnapshot (vale 0) e continuam iguais.
+  const valorCobrado = N(fechamento.faturamentoBruto);
+  const cotaParteParceiros = N(fechamento.cotaParteSnapshot);
+  const receitaBruta = valorCobrado - cotaParteParceiros;
   const impostos = N(fechamento.impostoPagoReal);
   const receitaLiquida = receitaBruta - impostos;
   const custosVariaveisTotais = N(fechamento.custosVariaveisReaisInformados);
@@ -400,16 +445,20 @@ export function montarDREMensal(fechamento) {
   const custosFixos = N(fechamento.custosFixosSnapshot);
   const aluguelRecebido = N(fechamento.aluguelRecebidoSnapshot);
   const resultadoOperacional = margemContribuicaoTotal - custosFixos + aluguelRecebido;
-  return { receitaBruta, impostos, receitaLiquida, custosVariaveisTotais, margemContribuicaoTotal, custosFixos, aluguelRecebido, resultadoOperacional };
+  return { valorCobrado, cotaParteParceiros, receitaBruta, impostos, receitaLiquida, custosVariaveisTotais, margemContribuicaoTotal, custosFixos, aluguelRecebido, resultadoOperacional };
 }
 
 export function montarDRE(servicosCalc, nd) {
   const validos = servicosCalc.filter((s) => s.calc.status === "ok");
-  const receitaBruta = validos.reduce((s, x) => s + x.calc.preco * N(x.atendimentosMes), 0);
+  // Bloco 11: valor cobrado dos clientes − cota-parte dos parceiros = receita bruta
+  // do salão. A cota sai dos custos variáveis para não ser descontada duas vezes.
+  const valorCobrado = validos.reduce((s, x) => s + x.calc.preco * N(x.atendimentosMes), 0);
+  const cotaParteParceiros = validos.reduce((s, x) => s + N(x.calc.valorCotaParte) * N(x.atendimentosMes), 0);
+  const receitaBruta = valorCobrado - cotaParteParceiros;
   const impostos = validos.reduce((s, x) => s + x.calc.valorImposto * N(x.atendimentosMes), 0);
   const receitaLiquida = receitaBruta - impostos;
   const custosVariaveisTotais = validos.reduce(
-    (s, x) => s + (x.calc.totalVariaveis + x.calc.valorComissao + x.calc.valorTaxaCartao) * N(x.atendimentosMes), 0
+    (s, x) => s + (x.calc.totalVariaveis + x.calc.valorComissao - N(x.calc.valorCotaParte) + x.calc.valorTaxaCartao) * N(x.atendimentosMes), 0
   );
   const margemContribuicaoTotal = receitaLiquida - custosVariaveisTotais;
   const custosFixos = nd.custoFixoTotal;
@@ -421,6 +470,7 @@ export function montarDRE(servicosCalc, nd) {
   const resultadoOperacional = margemContribuicaoTotal - custosFixos + aluguelRecebido;
   const rcm = receitaBruta > 0 ? margemContribuicaoTotal / receitaBruta : 0;
   return {
+    valorCobrado, cotaParteParceiros,
     receitaBruta, impostos, receitaLiquida, custosVariaveisTotais, margemContribuicaoTotal,
     custosFixos, aluguelRecebido, custosFixosLiquidos, resultadoOperacional, rcm, qtdInvalidos: servicosCalc.length - validos.length,
   };
@@ -470,7 +520,10 @@ export function calcularPrecoMinimoPacote(itensSelecionados, nd) {
   const somaPrecos = itensSelecionados.reduce((s, it) => s + it.calc.preco, 0);
   if (somaPrecos <= 0) return { status: "sem-dado" };
   const comissaoPctPonderada = itensSelecionados.reduce((s, it) => s + comissaoEfetiva(it, nd) * it.calc.preco, 0) / somaPrecos;
-  const taxaCartaoPctPonderada = itensSelecionados.reduce((s, it) => s + taxaEfetiva(it, nd) * it.calc.preco, 0) / somaPrecos;
+  // Bloco 11: taxa e imposto já descontada a cota-parte de parceiro de cada serviço.
+  const fatorSalao = (it) => 1 - parcelaParceiro(it, nd) / 100;
+  const taxaCartaoPctPonderada = itensSelecionados.reduce((s, it) => s + taxaEfetiva(it, nd) * fatorSalao(it) * it.calc.preco, 0) / somaPrecos;
+  const impostoPctPonderado = itensSelecionados.reduce((s, it) => s + nd.impostoPct * fatorSalao(it) * it.calc.preco, 0) / somaPrecos;
 
   const margensEfetivas = itensSelecionados.map((it) => ({
     nome: it.nome,
@@ -478,7 +531,7 @@ export function calcularPrecoMinimoPacote(itensSelecionados, nd) {
   }));
   const menor = margensEfetivas.reduce((a, b) => (b.margemPct < a.margemPct ? b : a));
 
-  const soma = comissaoPctPonderada + taxaCartaoPctPonderada + nd.impostoPct + menor.margemPct;
+  const soma = comissaoPctPonderada + taxaCartaoPctPonderada + impostoPctPonderado + menor.margemPct;
   if (soma >= 100) return { status: "trava-percentual" };
 
   return {
