@@ -39,8 +39,8 @@ export function chavesDoApp(todasAsChaves) {
   return (todasAsChaves || []).filter((k) => typeof k === "string" && k.startsWith(PREFIXO_DADOS_APP));
 }
 
-/* Canal de contato: vazio até ser definido na versão final. */
-export const CONTATO_PRIVACIDADE = "";
+/* Canal de contato do titular de dados (Resolução CD/ANPD nº 2/2022, art. 11). */
+export const CONTATO_PRIVACIDADE = "dasbarbosairara@gmail.com";
 const TEXTO_CONTATO = CONTATO_PRIVACIDADE
   ? `Para dúvidas sobre privacidade, fale com o responsável pelo app: ${CONTATO_PRIVACIDADE}.`
   : "O canal de contato do responsável pelo app será informado na versão final destes documentos.";

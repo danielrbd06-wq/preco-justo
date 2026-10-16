@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   VERSAO_TERMOS, CHAVE_ACEITE, montarAceite, lerAceite, chavesDoApp,
-  DOCUMENTOS_LEGAIS, RESUMO_ACEITE,
+  DOCUMENTOS_LEGAIS, RESUMO_ACEITE, CONTATO_PRIVACIDADE,
 } from "./termos.js";
 
 describe("aceite dos termos", () => {
@@ -46,5 +46,12 @@ describe("textos legais", () => {
   it("nenhuma marcação de rascunho ([a definir], [revisão jurídica]) aparece para o usuário", () => {
     const tudo = [...RESUMO_ACEITE, ...secoes.flatMap((s) => [s.titulo, ...s.paragrafos, ...(s.itens || []), ...(s.depois || [])])].join(" ");
     expect(tudo).not.toMatch(/[[\]]/);
+  });
+  it("o canal de contato aparece nos Termos e no Aviso de Privacidade", () => {
+    expect(CONTATO_PRIVACIDADE).toMatch(/^[^@\s]+@[^@\s]+\.[a-z]{2,}$/);
+    for (const doc of Object.values(DOCUMENTOS_LEGAIS)) {
+      const texto = doc.secoes.flatMap((s) => [...s.paragrafos, ...(s.depois || [])]).join(" ");
+      expect(texto).toContain(CONTATO_PRIVACIDADE);
+    }
   });
 });
