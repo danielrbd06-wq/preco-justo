@@ -294,7 +294,7 @@ export function somaCustosVariaveis(custosVariaveis, contexto) {
 /* ======================================================================= */
 
 export function calcularServico({ custosVariaveis, comissaoPct: comissaoInformada, comissaoModo, comissaoEhCotaParte, parcelaParceiroPct: parcelaInformada, taxaCartaoPct: taxaInformada, taxaModo, margemPct, horasPorAtendimento, atendimentosMes }, nd) {
-  if (!nd || !nd.horasTotais) return { status: "sem-negocio" };
+  if (!nd?.horasTotais) return { status: "sem-negocio" };
   const comissaoPct = comissaoEfetiva({ comissaoPct: comissaoInformada, comissaoModo }, nd);
   const taxaInformadaOuMedia = taxaEfetiva({ taxaCartaoPct: taxaInformada, taxaModo }, nd);
   // Bloco 11: a cota-parte do parceiro fica fora da receita do salão. O imposto e a
@@ -355,7 +355,7 @@ export function pontoEquilibrioSemanal(mensal, _diasMesNegocioNaoUsado) {
 /* ======================================================================= */
 
 export function calcularReverso({ custosVariaveis, comissaoPct: comissaoInformada, comissaoModo, comissaoEhCotaParte, parcelaParceiroPct: parcelaInformada, taxaCartaoPct: taxaInformada, taxaModo, precoCobrado, horasPorAtendimento, atendimentosMes, margemMetaPct }, nd) {
-  if (!nd || !nd.horasTotais) return { status: "sem-negocio" };
+  if (!nd?.horasTotais) return { status: "sem-negocio" };
   const comissaoPct = comissaoEfetiva({ comissaoPct: comissaoInformada, comissaoModo }, nd);
   // Bloco 11: mesma regra do Modo A para a cota-parte do parceiro.
   const parcelaParceiroPct = parcelaParceiro({ comissaoPct: comissaoInformada, comissaoModo, comissaoEhCotaParte, parcelaParceiroPct: parcelaInformada }, nd);
@@ -593,7 +593,7 @@ export const DIAS_PRECO_ANTIGO = 180;
 
 /* Dias entre uma data AAAA-MM-DD e hoje (meio-dia, para não errar pelo fuso). */
 export function diasDesde(iso, hoje = new Date()) {
-  return Math.floor((hoje.getTime() - new Date(iso + "T12:00:00").getTime()) / 86400000);
+  return Math.floor((hoje.getTime() - new Date(`${iso}T12:00:00`).getTime()) / 86400000);
 }
 
 /* Onde o preço do usuário fica entre os preços anotados dos concorrentes.   */

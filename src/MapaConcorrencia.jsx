@@ -8,7 +8,7 @@
 /* Nenhum ponto é inventado: só aparecem o local do próprio negócio e os    */
 /* concorrentes que o usuário marcou tocando no mapa.                       */
 /* ======================================================================= */
-import React, { useEffect, useRef } from "react";
+import { useEffect, useRef } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 

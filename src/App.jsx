@@ -8,7 +8,7 @@ import {
   Calculator, LayoutDashboard, MapPin, Plus, Trash2, Save, AlertTriangle,
   CheckCircle2, ShieldCheck, Clock3, Sparkles, Info, Building2,
   Landmark, PiggyBank, TrendingUp, TrendingDown, HelpCircle,
-  Download, Printer, X, Pencil, Sun, Moon, Monitor, Settings2, Share2, ChevronDown, CalendarCheck, Package,
+  Download, Printer, X, Pencil, Sun, Moon, Monitor, Share2, ChevronDown, CalendarCheck, Package,
   Scissors, Hand, Flower2, CreditCard, FileText,
 } from "lucide-react";
 import { createPortal } from "react-dom";
@@ -19,12 +19,11 @@ import {
   VERSAO_TERMOS, DATA_TERMOS, CHAVE_ACEITE, montarAceite, lerAceite, chavesDoApp, RESUMO_ACEITE, DOCUMENTOS_LEGAIS,
 } from "./termos.js";
 import {
-  fmtBRL, fmtPct, N, normalizarValorBR, ANEXO_III, ANEXO_V,
-  aliquotaEfetiva, VINCULOS_PROFISSIONAL, vinculoDe, calcularComissaoEquipe, comissaoEfetiva, FORMAS_PAGAMENTO,
-  calcularTaxaRecebimento, taxaEfetiva, computeNegocioDerivado, converterParaDias, precoUnitarioItem, custoMensalInsumoCompartilhado,
-  calcularValorItemVariavel, somaCustosVariaveis, calcularServico, SEMANAS_POR_MES_CALENDARIO, pontoEquilibrioSemanal, calcularReverso,
-  calcularUnificado, calcularParaExibicao, montarDREMensal, montarDRE, calcularIndicadoresGerenciais, calcularPrecoMinimoPacote,
-  distanciaKm, mediana, ultimoPrecoPorConcorrente, pisoDoServico,
+  fmtBRL, fmtPct, N, normalizarValorBR, ANEXO_III, 
+  aliquotaEfetiva, VINCULOS_PROFISSIONAL, vinculoDe, comissaoEfetiva, FORMAS_PAGAMENTO,
+  calcularTaxaRecebimento, taxaEfetiva, computeNegocioDerivado, precoUnitarioItem, 
+  calcularValorItemVariavel, calcularServico, pontoEquilibrioSemanal, calcularReverso,calcularParaExibicao, montarDREMensal, montarDRE, calcularIndicadoresGerenciais, calcularPrecoMinimoPacote,
+  distanciaKm, ultimoPrecoPorConcorrente, pisoDoServico,
   FONTES_PRECO, DIAS_PRECO_ANTIGO, diasDesde, posicaoNaConcorrencia, linhasPlanilhaObservatorio,
   parceiroValido, parcelaParceiro,
 } from "./calculos.js";
@@ -174,14 +173,14 @@ async function listarComFallback(prefixo) {
   try {
     for (let i = 0; i < window.localStorage.length; i++) {
       const chaveArmazenada = window.localStorage.key(i);
-      if (chaveArmazenada && chaveArmazenada.startsWith(PREFIXO_CACHE_LOCAL + prefixo)) {
+      if (chaveArmazenada?.startsWith(PREFIXO_CACHE_LOCAL + prefixo)) {
         chaves.add(chaveArmazenada.slice(PREFIXO_CACHE_LOCAL.length));
       }
     }
   } catch { /* localStorage indisponível — segue só com o que window.storage.list trouxer, se trouxer */ }
   try {
     const r = await comRetry(() => window.storage.list(prefixo, false));
-    (r?.keys || []).forEach((k) => chaves.add(k));
+    (r?.keys || []).forEach((k) => { chaves.add(k); });
   } catch { /* window.storage só existe dentro do Claude — fora dele, o cache local acima já resolve */ }
   return Array.from(chaves);
 }
@@ -373,6 +372,7 @@ function SeletorOrigem({ rotulo, ajuda, faq, ariaLabel, opcoes, valor, onChange 
       </span>
       <div className="flex gap-1 p-1 rounded-lg mt-1" role="radiogroup" aria-label={ariaLabel} style={{ background: t.surfaceAlt }}>
         {opcoes.map((o) => (
+          // biome-ignore lint/a11y/useSemanticElements: seletor segmentado; botão com role="radio" mantém o visual e o teclado
           <button key={o.id} type="button" role="radio" aria-checked={valor === o.id} onClick={() => onChange(o.id)}
             className="btn-press flex-1 rounded-md px-2 py-1.5 text-xs font-medium leading-snug"
             style={{ background: valor === o.id ? t.surface : "transparent", color: valor === o.id ? t.text : t.textMuted, boxShadow: valor === o.id ? t.shadow : "none", border: `1px solid ${valor === o.id ? t.border : "transparent"}`, transition: "background .18s ease, color .18s ease, box-shadow .18s ease" }}>
@@ -750,8 +750,8 @@ class LimiteDeErro extends React.Component {
           <p className="text-xs mt-1 mb-4" style={{ color: "#5B6472" }}>
             Algo deu errado ao abrir isso. Toca em voltar e tenta de novo — se acontecer sempre com o mesmo item, exclua e recrie.
           </p>
-          <button
-            onClick={() => { this.setState({ erro: null }); this.props.onReset && this.props.onReset(); }}
+          <button type="button"
+            onClick={() => { this.setState({ erro: null }); this.props.onReset?.(); }}
             className="btn-press rounded-xl px-4 py-2 text-sm font-semibold"
             style={{ background: "#00CBA7", color: "#0F172A" }}
           >
@@ -766,7 +766,7 @@ class LimiteDeErro extends React.Component {
 
 function App({ onSair, nomeEstabelecimento } = {}) {
   const [temaPref, setTemaPref] = useState("automatico");
-  const [temaCarregado, setTemaCarregado] = useState(false);
+  const [, setTemaCarregado] = useState(false);
   const [sistemaEscuro, setSistemaEscuro] = useState(() =>
     typeof window !== "undefined" && window.matchMedia ? window.matchMedia("(prefers-color-scheme: dark)").matches : false
   );
@@ -884,10 +884,10 @@ function App({ onSair, nomeEstabelecimento } = {}) {
     setNegocio(negocioExemplo);
     salvarComFallback("negocio:config", JSON.stringify(negocioExemplo));
     setServicos((prevServicos) => {
-      (prevServicos || []).forEach((s) => excluirComFallback(`servicos:${s.id}`));
+      (prevServicos || []).forEach((s) => { excluirComFallback(`servicos:${s.id}`); });
       return servicosExemplo;
     });
-    servicosExemplo.forEach((s) => salvarComFallback(`servicos:${s.id}`, JSON.stringify(s)));
+    servicosExemplo.forEach((s) => { salvarComFallback(`servicos:${s.id}`, JSON.stringify(s)); });
     setTab("calculadora");
   }, [negocio]);
 
@@ -1083,7 +1083,7 @@ function Header({ temaPref, mudarTema, onSair, nomeEstabelecimento, perfil }) {
           <span className="font-num text-[10px] px-1.5 py-0.5 rounded" style={{ color: t.textMuted, background: t.surfaceAlt }}>
             {VERSAO_APP}
           </span>
-          <button
+          <button type="button"
             onClick={() => setAbertoMenu((v) => !v)}
             aria-label="Configurações de tema"
             className="btn-press flex items-center justify-center rounded-lg"
@@ -1101,7 +1101,7 @@ function Header({ temaPref, mudarTema, onSair, nomeEstabelecimento, perfil }) {
                 const Icon = o.icon;
                 const ativo = temaPref === o.id;
                 return (
-                  <button
+                  <button type="button"
                     key={o.id}
                     onClick={() => { mudarTema(o.id); setAbertoMenu(false); }}
                     className="btn-press w-full flex items-center gap-2 rounded-lg px-2.5 py-2 text-sm text-left"
@@ -1115,7 +1115,7 @@ function Header({ temaPref, mudarTema, onSair, nomeEstabelecimento, perfil }) {
               {onSair && (
                 <>
                   <div style={{ height: 1, background: t.border, margin: "4px 2px" }} />
-                  <button
+                  <button type="button"
                     onClick={() => { setAbertoMenu(false); onSair(); }}
                     className="btn-press w-full flex items-center gap-2 rounded-lg px-2.5 py-2 text-sm text-left"
                     style={{ color: t.danger }}
@@ -1152,7 +1152,7 @@ function TabNavTopo({ tab, setTab, configurado }) {
           const active = tab === it.id;
           const precisaAtencao = it.id === "negocio" && !configurado;
           return (
-            <button
+            <button type="button"
               key={it.id} onClick={() => setTab(it.id)}
               className="tab-btn btn-press flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-sm font-medium relative"
               style={{ background: active ? t.surface : "transparent", color: active ? t.primaryText : t.textMuted, boxShadow: active ? t.shadow : "none" }}
@@ -1187,7 +1187,7 @@ function TabNavRodape({ tab, setTab, configurado }) {
         const active = tab === it.id;
         const precisaAtencao = it.id === "negocio" && !configurado;
         return (
-          <button
+          <button type="button"
             key={it.id} onClick={() => setTab(it.id)}
             className="tab-btn btn-press touch-target-48 flex flex-col items-center justify-center gap-0.5 py-2 relative min-w-0 overflow-hidden"
             style={{ color: active ? t.primaryText : t.textMuted }}
@@ -1301,6 +1301,7 @@ function Ajuda({ texto, faq }) {
         ?
       </button>
       {aberto && createPortal(
+        // biome-ignore lint/a11y/useKeyWithClickEvents: tocar no balão fecha; pelo teclado ele fecha com Esc ou ao sair do botão "?"
         <span
           ref={balaoRef} role="tooltip"
           onClick={(e) => { e.stopPropagation(); setAberto(false); }}
@@ -1334,6 +1335,7 @@ function Campo({ label, hint, ajuda, faq, children }) {
     // <select> de "Modelo de operação" (a opção "Equipe / cadeiras comissionadas ou
     // alugadas" é longa) — o mesmo bug de antes (barra de baixo, resumo das seções),
     // só que num terceiro lugar. Corrigindo aqui uma vez só, em vez de campo por campo.
+    // biome-ignore lint/a11y/noLabelWithoutControl: o campo vem em children (input, select ou CampoMoeda), dentro do label
     <label className="block min-w-0">
       {/* block + leading-snug: como span em linha, o rótulo pequeno herdava a altura de linha */}
       {/* do texto base (24px) e, ao quebrar em duas linhas, ficava com um vão entre elas.    */}
@@ -1350,7 +1352,7 @@ function CampoNumero({ value, onChange, placeholder, prefixo, max }) {
   return (
     <div className="flex items-center gap-1">
       {prefixo && <span className="text-sm" style={{ color: t.textMuted }}>{prefixo}</span>}
-      <input className={CAMPO + " font-num"} style={campoStyle} type="number" min="0" max={max} placeholder={placeholder}
+      <input className={`${CAMPO} font-num`} style={campoStyle} type="number" min="0" max={max} placeholder={placeholder}
         value={value} onChange={(e) => onChange(e.target.value)} />
     </div>
   );
@@ -1365,7 +1367,7 @@ function CampoMoeda({ value, onChange }) {
 
   return (
     <input
-      className={CAMPO + " font-num"} style={campoStyle}
+      className={`${CAMPO} font-num`} style={campoStyle}
       type="text" inputMode="decimal"
       value={display}
       onFocus={() => setFocado(true)}
@@ -1381,25 +1383,11 @@ function CampoPct({ label, value, onChange, ajuda, faq }) {
   return (
     <Campo label={label} ajuda={ajuda} faq={faq}>
       <div className="flex items-center gap-1">
-        <input className={CAMPO + " font-num"} style={campoStyle} type="number" min="0" max="99" value={value}
+        <input className={`${CAMPO} font-num`} style={campoStyle} type="number" min="0" max="99" value={value}
           onChange={(e) => onChange(e.target.value)} />
         <span className="text-sm" style={{ color: t.textMuted }}>%</span>
       </div>
     </Campo>
-  );
-}
-
-function Secao({ titulo, icon: Icon, ajuda, children }) {
-  const t = useT();
-  return (
-    <div>
-      <div className="flex items-center gap-1.5 mb-2">
-        {Icon && <Icon size={14} style={{ color: t.primaryText }} />}
-        <span className="text-sm font-semibold" style={{ color: t.text }}>{titulo}</span>
-        {ajuda && <Ajuda texto={ajuda} />}
-      </div>
-      {children}
-    </div>
   );
 }
 
@@ -1411,14 +1399,17 @@ function SecaoColapsavel({ titulo, icon: Icon, ajuda, faq, resumo, abertoInicial
   const [aberto, setAberto] = useState(abertoInicial);
   return (
     <div className="rounded-xl" style={{ border: `1px solid ${t.border}`, overflow: "hidden" }}>
-      <button onClick={() => setAberto((v) => !v)} className="btn-press touch-target flex items-center justify-between w-full px-3 py-2.5" aria-expanded={aberto}>
+      <button type="button" onClick={() => setAberto((v) => !v)} className="btn-press touch-target flex items-center justify-between w-full px-3 py-2.5" aria-expanded={aberto}>
         <span className="flex items-center gap-1.5 min-w-0">
           {Icon && <Icon size={14} style={{ color: t.primaryText, flexShrink: 0 }} />}
           {/* O "?" fica dentro do título para acompanhar a última palavra quando ele quebra */}
           {/* em duas linhas; como irmão no flex, ia parar longe do texto, junto da seta.    */}
           <span className="text-sm font-semibold text-left leading-snug min-w-0" style={{ color: t.text }}>
             {titulo}
-            {ajuda && <span onClick={(e) => e.stopPropagation()}><Ajuda texto={ajuda} faq={faq} /></span>}
+            {ajuda && (
+              // biome-ignore lint/a11y/useKeyWithClickEvents lint/a11y/noStaticElementInteractions: só impede que o "?" abra ou feche a seção
+              <span onClick={(e) => e.stopPropagation()}><Ajuda texto={ajuda} faq={faq} /></span>
+            )}
           </span>
         </span>
         <span className="flex items-center gap-2 min-w-0">
@@ -1519,13 +1510,13 @@ function LinhaProfissional({ p, onChange, onRemove, salaoMei = false }) {
   return (
     <div className="rounded-xl p-2.5 space-y-2 fade-up" style={{ background: t.surfaceAlt }}>
       <div className="flex gap-2 items-center">
-        <input className={CAMPO + " min-w-0"} style={campoStyle} placeholder="Nome do profissional" value={p.nome}
+        <input className={`${CAMPO} min-w-0`} style={campoStyle} placeholder="Nome do profissional" value={p.nome}
           onChange={(e) => onChange("nome", e.target.value)} aria-label="Nome do profissional" />
         <label className="flex items-center gap-1.5 text-[11px] shrink-0" style={{ color: t.textMuted }}>
           <input type="checkbox" checked={p.ativo !== false} onChange={(e) => onChange("ativo", e.target.checked)} />
           ativo
         </label>
-        <button onClick={onRemove} className="btn-press touch-target shrink-0" style={{ color: t.danger }} aria-label={`Remover ${p.nome || "profissional"}`}>
+        <button type="button" onClick={onRemove} className="btn-press touch-target shrink-0" style={{ color: t.danger }} aria-label={`Remover ${p.nome || "profissional"}`}>
           <Trash2 size={16} />
         </button>
       </div>
@@ -1725,8 +1716,8 @@ function CopiaSeguranca({ soRestaurar = false }) {
     setRestaurando(true);
     // Apaga só o que não está na cópia; o resto é sobrescrito logo abaixo.
     const atuais = await listarComFallback("");
-    atuais.filter((chave) => !(chave in lida.dados)).forEach((chave) => excluirComFallback(chave));
-    Object.entries(lida.dados).forEach(([chave, valor]) => salvarComFallback(chave, valor));
+    atuais.filter((chave) => !(chave in lida.dados)).forEach((chave) => { excluirComFallback(chave); });
+    Object.entries(lida.dados).forEach(([chave, valor]) => { salvarComFallback(chave, valor); });
     setTimeout(() => window.location.reload(), 400);
   };
 
@@ -2063,7 +2054,7 @@ function OnboardingPerfil({ onConcluir }) {
             <input className={CAMPO} style={{ background: t.surfaceAlt, border: `1px solid ${t.border}`, color: t.text }}
               placeholder="ex: Barbearia do João" value={nomeFantasia} onChange={(e) => setNomeFantasia(e.target.value)} />
           </Campo>
-          <button onClick={() => setPasso(2)} disabled={!podeAvancarPasso1} className="btn-press w-full rounded-xl px-4 py-2.5 text-sm font-semibold"
+          <button type="button" onClick={() => setPasso(2)} disabled={!podeAvancarPasso1} className="btn-press w-full rounded-xl px-4 py-2.5 text-sm font-semibold"
             style={{ background: podeAvancarPasso1 ? t.primaryText : t.surfaceAlt, color: podeAvancarPasso1 ? t.onPrimary : t.textMuted, opacity: podeAvancarPasso1 ? 1 : 0.6 }}>
             Continuar
           </button>
@@ -2076,8 +2067,8 @@ function OnboardingPerfil({ onConcluir }) {
             <CardSelecao key={s.id} ativo={segmento === s.id} onClick={() => setSegmento(s.id)} icon={s.icon} titulo={s.label} />
           ))}
           <div className="flex gap-2 pt-1">
-            <button onClick={() => setPasso(1)} className="btn-press rounded-xl px-4 py-2.5 text-sm font-semibold" style={{ background: t.surfaceAlt, color: t.textMuted }}>Voltar</button>
-            <button onClick={() => setPasso(3)} disabled={!podeAvancarPasso2} className="btn-press flex-1 rounded-xl px-4 py-2.5 text-sm font-semibold"
+            <button type="button" onClick={() => setPasso(1)} className="btn-press rounded-xl px-4 py-2.5 text-sm font-semibold" style={{ background: t.surfaceAlt, color: t.textMuted }}>Voltar</button>
+            <button type="button" onClick={() => setPasso(3)} disabled={!podeAvancarPasso2} className="btn-press flex-1 rounded-xl px-4 py-2.5 text-sm font-semibold"
               style={{ background: podeAvancarPasso2 ? t.primaryText : t.surfaceAlt, color: podeAvancarPasso2 ? t.onPrimary : t.textMuted, opacity: podeAvancarPasso2 ? 1 : 0.6 }}>
               Continuar
             </button>
@@ -2091,8 +2082,8 @@ function OnboardingPerfil({ onConcluir }) {
             <CardSelecao key={m.id} ativo={modeloOperacao === m.id} onClick={() => setModeloOperacao(m.id)} icon={Building2} titulo={m.label} descricao={m.descricao} />
           ))}
           <div className="flex gap-2 pt-1">
-            <button onClick={() => setPasso(2)} className="btn-press rounded-xl px-4 py-2.5 text-sm font-semibold" style={{ background: t.surfaceAlt, color: t.textMuted }}>Voltar</button>
-            <button onClick={() => setPasso(4)} disabled={!podeAvancarPasso3} className="btn-press flex-1 rounded-xl px-4 py-2.5 text-sm font-semibold"
+            <button type="button" onClick={() => setPasso(2)} className="btn-press rounded-xl px-4 py-2.5 text-sm font-semibold" style={{ background: t.surfaceAlt, color: t.textMuted }}>Voltar</button>
+            <button type="button" onClick={() => setPasso(4)} disabled={!podeAvancarPasso3} className="btn-press flex-1 rounded-xl px-4 py-2.5 text-sm font-semibold"
               style={{ background: podeAvancarPasso3 ? t.primaryText : t.surfaceAlt, color: podeAvancarPasso3 ? t.onPrimary : t.textMuted, opacity: podeAvancarPasso3 ? 1 : 0.6 }}>
               Continuar
             </button>
@@ -2123,8 +2114,8 @@ function OnboardingPerfil({ onConcluir }) {
             </p>
           </div>
           <div className="flex gap-2">
-            <button onClick={() => setPasso(3)} className="btn-press rounded-xl px-4 py-2.5 text-sm font-semibold" style={{ background: t.surfaceAlt, color: t.textMuted }}>Voltar</button>
-            <button onClick={concluir} className="btn-press flex-1 inline-flex items-center justify-center gap-1.5 rounded-xl px-4 py-2.5 text-sm font-semibold" style={{ background: t.success, color: t.onSuccess }}>
+            <button type="button" onClick={() => setPasso(3)} className="btn-press rounded-xl px-4 py-2.5 text-sm font-semibold" style={{ background: t.surfaceAlt, color: t.textMuted }}>Voltar</button>
+            <button type="button" onClick={concluir} className="btn-press flex-1 inline-flex items-center justify-center gap-1.5 rounded-xl px-4 py-2.5 text-sm font-semibold" style={{ background: t.success, color: t.onSuccess }}>
               <CheckCircle2 size={14} /> Confirmar e ir pros custos fixos
             </button>
           </div>
@@ -2210,7 +2201,7 @@ function Negocio({ negocio, onSalvar, servicos, onCarregarExemplo }) {
                   Preenche negócio e 3 serviços de exemplo (números ilustrativos, editáveis) — deixa o Painel e o DRE prontos pra explorar.
                 </p>
               </div>
-              <button onClick={clicouCarregarExemplo} className="btn-press touch-target rounded-xl px-3 py-2 text-xs font-semibold w-full sm:w-auto"
+              <button type="button" onClick={clicouCarregarExemplo} className="btn-press touch-target rounded-xl px-3 py-2 text-xs font-semibold w-full sm:w-auto"
                 style={{ background: t.primaryText, color: t.onPrimary }}>
                 Carregar exemplo
               </button>
@@ -2219,8 +2210,8 @@ function Negocio({ negocio, onSalvar, servicos, onCarregarExemplo }) {
             <div className="pop-in flex items-center gap-2 flex-wrap text-sm" style={{ color: t.danger }}>
               <AlertTriangle size={16} className="shrink-0" />
               <span className="flex-1 basis-full sm:basis-auto min-w-0">Isso substitui custos, configurações e serviços que você já preencheu. Seu perfil (nome, segmento e cidade) é mantido. Tem certeza?</span>
-              <button onClick={() => { onCarregarExemplo(); setConfirmandoExemplo(false); }} className="btn-press font-semibold underline shrink-0">Sim, carregar exemplo</button>
-              <button onClick={() => setConfirmandoExemplo(false)} className="btn-press underline shrink-0" style={{ color: t.textMuted }}>Cancelar</button>
+              <button type="button" onClick={() => { onCarregarExemplo(); setConfirmandoExemplo(false); }} className="btn-press font-semibold underline shrink-0">Sim, carregar exemplo</button>
+              <button type="button" onClick={() => setConfirmandoExemplo(false)} className="btn-press underline shrink-0" style={{ color: t.textMuted }}>Cancelar</button>
             </div>
           )}
         </div>
@@ -2232,7 +2223,7 @@ function Negocio({ negocio, onSalvar, servicos, onCarregarExemplo }) {
       {configuradoSalvo && (
         <div className="lg:col-span-2 min-w-0">
           {!confirmandoExemplo ? (
-            <button onClick={clicouCarregarExemplo} className="btn-press touch-target text-[11px] font-medium inline-flex items-start gap-1 text-left"
+            <button type="button" onClick={clicouCarregarExemplo} className="btn-press touch-target text-[11px] font-medium inline-flex items-start gap-1 text-left"
               style={{ color: t.textMuted }}>
               <Sparkles size={11} className="shrink-0 mt-[2px]" /> recarregar dados de exemplo (substitui o que está preenchido)
             </button>
@@ -2240,15 +2231,15 @@ function Negocio({ negocio, onSalvar, servicos, onCarregarExemplo }) {
             <div className="pop-in flex items-center gap-2 flex-wrap text-xs rounded-xl p-2.5" style={{ background: t.dangerSoft, color: t.danger }}>
               <AlertTriangle size={14} className="shrink-0" />
               <span className="flex-1 basis-full sm:basis-auto min-w-0">Isso substitui custos, configurações e serviços que você já preencheu. Seu perfil (nome, segmento e cidade) é mantido. Tem certeza?</span>
-              <button onClick={() => { onCarregarExemplo(); setConfirmandoExemplo(false); }} className="btn-press font-semibold underline shrink-0">Sim, carregar exemplo</button>
-              <button onClick={() => setConfirmandoExemplo(false)} className="btn-press underline shrink-0" style={{ color: t.textMuted }}>Cancelar</button>
+              <button type="button" onClick={() => { onCarregarExemplo(); setConfirmandoExemplo(false); }} className="btn-press font-semibold underline shrink-0">Sim, carregar exemplo</button>
+              <button type="button" onClick={() => setConfirmandoExemplo(false)} className="btn-press underline shrink-0" style={{ color: t.textMuted }}>Cancelar</button>
             </div>
           )}
         </div>
       )}
 
       <div className="lg:col-span-2 rounded-2xl p-4 min-w-0" style={cardStyle}>
-        <button onClick={() => setPerfilAberto((v) => !v)} className="btn-press touch-target flex items-center justify-between w-full" aria-expanded={perfilAberto}>
+        <button type="button" onClick={() => setPerfilAberto((v) => !v)} className="btn-press touch-target flex items-center justify-between w-full" aria-expanded={perfilAberto}>
           <span className="flex items-center gap-2 min-w-0">
             {(() => { const Icon = SEGMENTOS.find((s) => s.id === n.perfil?.segmento)?.icon || Building2; return <Icon size={16} style={{ color: t.primaryText, flexShrink: 0 }} />; })()}
             <span className="text-sm font-semibold truncate min-w-0" style={{ color: t.text }}>Perfil do negócio</span>
@@ -2320,13 +2311,13 @@ function Negocio({ negocio, onSalvar, servicos, onCarregarExemplo }) {
             {n.custosFixos.map((item) => (
               <div key={item.id} className="flex flex-col gap-1.5 rounded-xl p-2" style={{ background: t.surfaceAlt }}>
                 <div className="flex gap-2 items-center">
-                  <input className={CAMPO + " min-w-0"} style={{ background: t.surface, border: `1px solid ${t.border}`, color: t.text }}
+                  <input className={`${CAMPO} min-w-0`} style={{ background: t.surface, border: `1px solid ${t.border}`, color: t.text }}
                     placeholder="ex: aluguel" value={item.nome}
                     onChange={(e) => updateCusto(item.id, "nome", e.target.value)} />
                   <div style={{ width: 110, flexShrink: 0 }}>
                     <CampoMoeda value={item.valor} onChange={(v) => updateCusto(item.id, "valor", v)} />
                   </div>
-                  <button onClick={() => removeCusto(item.id)} className="btn-press shrink-0" style={{ color: t.danger }}>
+                  <button type="button" onClick={() => removeCusto(item.id)} className="btn-press shrink-0" style={{ color: t.danger }}>
                     <Trash2 size={16} />
                   </button>
                 </div>
@@ -2337,7 +2328,7 @@ function Negocio({ negocio, onSalvar, servicos, onCarregarExemplo }) {
               </div>
             ))}
           </div>
-          <button onClick={addCusto} className="btn-press mt-2 inline-flex items-center gap-1 text-xs font-medium rounded-lg px-2.5 py-1.5"
+          <button type="button" onClick={addCusto} className="btn-press mt-2 inline-flex items-center gap-1 text-xs font-medium rounded-lg px-2.5 py-1.5"
             style={{ color: t.primaryText, background: t.primarySoft }}>
             <Plus size={13} /> adicionar item
           </button>
@@ -2361,7 +2352,7 @@ function Negocio({ negocio, onSalvar, servicos, onCarregarExemplo }) {
               <p className="text-[11px]" style={{ color: t.textMuted }}>Nenhum profissional cadastrado ainda.</p>
             )}
           </div>
-          <button onClick={addProfissional} className="btn-press mt-2 inline-flex items-center gap-1 text-xs font-medium rounded-lg px-2.5 py-1.5"
+          <button type="button" onClick={addProfissional} className="btn-press mt-2 inline-flex items-center gap-1 text-xs font-medium rounded-lg px-2.5 py-1.5"
             style={{ color: t.primaryText, background: t.primarySoft }}>
             <Plus size={13} /> adicionar profissional
           </button>
@@ -2421,7 +2412,7 @@ function Negocio({ negocio, onSalvar, servicos, onCarregarExemplo }) {
                 onRemove={() => setN({ ...n, insumosCompartilhados: n.insumosCompartilhados.filter((i) => i.id !== item.id) })} />
             ))}
           </div>
-          <button
+          <button type="button"
             onClick={() => setN({ ...n, insumosCompartilhados: [...(n.insumosCompartilhados || []), { id: uid(), nome: "", modo: "duracao" }] })}
             className="btn-press mt-2 inline-flex items-center gap-1 text-xs font-medium rounded-lg px-2.5 py-1.5"
             style={{ color: t.primaryText, background: t.primarySoft }}>
@@ -2510,7 +2501,7 @@ function Negocio({ negocio, onSalvar, servicos, onCarregarExemplo }) {
               { id: "mei", label: "MEI" },
               { id: "simples", label: "Simples Nacional" },
             ].map((r) => (
-              <button key={r.id} onClick={() => setN({ ...n, regime: r.id })}
+              <button type="button" key={r.id} onClick={() => setN({ ...n, regime: r.id })}
                 className="btn-press rounded-lg px-3 py-1.5 text-xs font-medium"
                 style={{
                   background: n.regime === r.id ? t.primary : t.surfaceAlt,
@@ -2594,7 +2585,7 @@ function Negocio({ negocio, onSalvar, servicos, onCarregarExemplo }) {
             </Campo>
             <Campo label="Taxa de retorno alternativa ao mês" hint="ex: CDI do seu banco">
               <div className="flex items-center gap-1">
-                <input className={CAMPO + " font-num"} style={{ background: t.surface, border: `1px solid ${t.border}`, color: t.text }}
+                <input className={`${CAMPO} font-num`} style={{ background: t.surface, border: `1px solid ${t.border}`, color: t.text }}
                   type="number" min="0" step="0.1" value={n.taxaRetorno}
                   onChange={(e) => setN({ ...n, taxaRetorno: e.target.value })} />
                 <span className="text-sm" style={{ color: t.textMuted }}>%</span>
@@ -2674,16 +2665,16 @@ function ItemInsumoCompartilhado({ item, onChange, onRemove }) {
   return (
     <div className="rounded-xl p-2.5" style={{ background: t.surfaceAlt }}>
       <div className="flex gap-2 items-center">
-        <input className={CAMPO + " min-w-0"} style={inputEst} placeholder="ex: shampoo" value={item.nome}
+        <input className={`${CAMPO} min-w-0`} style={inputEst} placeholder="ex: shampoo" value={item.nome}
           onChange={(e) => setCampo("nome", e.target.value)} />
-        <button onClick={onRemove} className="btn-press touch-target-48 shrink-0" style={{ color: t.danger }} aria-label="Remover insumo">
+        <button type="button" onClick={onRemove} className="btn-press touch-target-48 shrink-0" style={{ color: t.danger }} aria-label="Remover insumo">
           <Trash2 size={16} />
         </button>
       </div>
 
       <div className="flex gap-1 mt-2 p-0.5 rounded-lg" style={{ background: t.surface, border: `1px solid ${t.border}` }} role="tablist">
         {[{ id: "duracao", label: "Por duração" }, { id: "unidade", label: "Por unidade" }].map((m) => (
-          <button key={m.id} role="tab" aria-selected={modo === m.id} onClick={() => setCampo("modo", m.id)}
+          <button type="button" key={m.id} role="tab" aria-selected={modo === m.id} onClick={() => setCampo("modo", m.id)}
             className="btn-press flex-1 rounded-md py-1 text-[10.5px] font-medium"
             style={{ background: modo === m.id ? t.primary : "transparent", color: modo === m.id ? t.onPrimary : t.textMuted }}>
             {m.label}
@@ -2696,7 +2687,7 @@ function ItemInsumoCompartilhado({ item, onChange, onRemove }) {
           <Campo label="Valor da compra"><CampoMoeda value={item.valorCompra} onChange={(v) => setCampo("valorCompra", v)} /></Campo>
           <Campo label="Dura quanto tempo?">
             <div className="flex gap-1">
-              <input className={CAMPO + " font-num"} style={{ ...inputEst, width: 54 }} type="number" min="0"
+              <input className={`${CAMPO} font-num`} style={{ ...inputEst, width: 54 }} type="number" min="0"
                 value={item.duracaoValor || ""} onChange={(e) => setCampo("duracaoValor", e.target.value)} />
               <select value={item.duracaoUnidade || "dias"} onChange={(e) => setCampo("duracaoUnidade", e.target.value)}
                 className="rounded-xl px-1.5 text-xs" style={inputEst}>
@@ -2719,11 +2710,11 @@ function ItemInsumoCompartilhado({ item, onChange, onRemove }) {
             <div className="grid grid-cols-3 gap-2">
               <Campo label="Valor pago"><CampoMoeda value={item.valorCompra} onChange={(v) => setCampo("valorCompra", v)} /></Campo>
               <Campo label="Nº de embalagens">
-                <input className={CAMPO + " font-num"} style={inputEst} type="number" min="0" value={item.embalagens || ""}
+                <input className={`${CAMPO} font-num`} style={inputEst} type="number" min="0" value={item.embalagens || ""}
                   onChange={(e) => onChange({ ...item, embalagens: e.target.value, quantidadeComprada: N(e.target.value) * N(item.unidadesPorEmbalagem) })} />
               </Campo>
               <Campo label="Unid. por embalagem">
-                <input className={CAMPO + " font-num"} style={inputEst} type="number" min="0" value={item.unidadesPorEmbalagem || ""}
+                <input className={`${CAMPO} font-num`} style={inputEst} type="number" min="0" value={item.unidadesPorEmbalagem || ""}
                   onChange={(e) => onChange({ ...item, unidadesPorEmbalagem: e.target.value, quantidadeComprada: N(item.embalagens) * N(e.target.value) })} />
               </Campo>
             </div>
@@ -2731,7 +2722,7 @@ function ItemInsumoCompartilhado({ item, onChange, onRemove }) {
             <div className="grid grid-cols-2 gap-2">
               <Campo label="Valor pago"><CampoMoeda value={item.valorCompra} onChange={(v) => setCampo("valorCompra", v)} /></Campo>
               <Campo label="Quantidade comprada">
-                <input className={CAMPO + " font-num"} style={inputEst} type="number" min="0" value={item.quantidadeComprada || ""}
+                <input className={`${CAMPO} font-num`} style={inputEst} type="number" min="0" value={item.quantidadeComprada || ""}
                   onChange={(e) => setCampo("quantidadeComprada", e.target.value)} />
               </Campo>
             </div>
@@ -2770,14 +2761,14 @@ function ItemCustoVariavel({ item, onChange, onRemove, contexto }) {
       <div className="flex gap-2 items-center">
         <input className={CAMPO} style={inputEst} placeholder="ex: shampoo" value={item.nome}
           onChange={(e) => setCampo("nome", e.target.value)} />
-        <button onClick={onRemove} className="btn-press touch-target-48 shrink-0" style={{ color: t.danger }} aria-label="Remover item">
+        <button type="button" onClick={onRemove} className="btn-press touch-target-48 shrink-0" style={{ color: t.danger }} aria-label="Remover item">
           <Trash2 size={16} />
         </button>
       </div>
 
       <div className="flex gap-1 mt-2 p-0.5 rounded-lg" style={{ background: t.surface, border: `1px solid ${t.border}` }} role="tablist">
         {modos.map((m) => (
-          <button key={m.id} role="tab" aria-selected={modo === m.id} onClick={() => setCampo("modo", m.id)}
+          <button type="button" key={m.id} role="tab" aria-selected={modo === m.id} onClick={() => setCampo("modo", m.id)}
             className="btn-press flex-1 rounded-md py-1 text-[10.5px] font-medium"
             style={{ background: modo === m.id ? t.primary : "transparent", color: modo === m.id ? t.onPrimary : t.textMuted }}>
             {m.label}
@@ -2796,7 +2787,7 @@ function ItemCustoVariavel({ item, onChange, onRemove, contexto }) {
           <Campo label="Valor da compra"><CampoMoeda value={item.valorCompra} onChange={(v) => setCampo("valorCompra", v)} /></Campo>
           <Campo label="Dura quanto tempo?">
             <div className="flex gap-1">
-              <input className={CAMPO + " font-num"} style={{ ...inputEst, width: 54 }} type="number" min="0"
+              <input className={`${CAMPO} font-num`} style={{ ...inputEst, width: 54 }} type="number" min="0"
                 value={item.duracaoValor || ""} onChange={(e) => setCampo("duracaoValor", e.target.value)} />
               <select value={item.duracaoUnidade || "dias"} onChange={(e) => setCampo("duracaoUnidade", e.target.value)}
                 className="rounded-xl px-1.5 text-xs" style={inputEst}>
@@ -2819,11 +2810,11 @@ function ItemCustoVariavel({ item, onChange, onRemove, contexto }) {
             <div className="grid grid-cols-3 gap-2">
               <Campo label="Valor pago"><CampoMoeda value={item.valorCompra} onChange={(v) => setCampo("valorCompra", v)} /></Campo>
               <Campo label="Nº de embalagens">
-                <input className={CAMPO + " font-num"} style={inputEst} type="number" min="0" value={item.embalagens || ""}
+                <input className={`${CAMPO} font-num`} style={inputEst} type="number" min="0" value={item.embalagens || ""}
                   onChange={(e) => onChange({ ...item, embalagens: e.target.value, quantidadeComprada: N(e.target.value) * N(item.unidadesPorEmbalagem) })} />
               </Campo>
               <Campo label="Unid. por embalagem">
-                <input className={CAMPO + " font-num"} style={inputEst} type="number" min="0" value={item.unidadesPorEmbalagem || ""}
+                <input className={`${CAMPO} font-num`} style={inputEst} type="number" min="0" value={item.unidadesPorEmbalagem || ""}
                   onChange={(e) => onChange({ ...item, unidadesPorEmbalagem: e.target.value, quantidadeComprada: N(item.embalagens) * N(e.target.value) })} />
               </Campo>
             </div>
@@ -2831,13 +2822,13 @@ function ItemCustoVariavel({ item, onChange, onRemove, contexto }) {
             <div className="grid grid-cols-2 gap-2">
               <Campo label="Valor pago"><CampoMoeda value={item.valorCompra} onChange={(v) => setCampo("valorCompra", v)} /></Campo>
               <Campo label="Quantidade comprada">
-                <input className={CAMPO + " font-num"} style={inputEst} type="number" min="0" value={item.quantidadeComprada || ""}
+                <input className={`${CAMPO} font-num`} style={inputEst} type="number" min="0" value={item.quantidadeComprada || ""}
                   onChange={(e) => setCampo("quantidadeComprada", e.target.value)} />
               </Campo>
             </div>
           )}
           <Campo label="Quanto usa por atendimento" hint="ex: 1 touca, ou 0,5 (meia unidade)">
-            <input className={CAMPO + " font-num"} style={{ ...inputEst, width: 100 }} type="number" min="0" step="0.1"
+            <input className={`${CAMPO} font-num`} style={{ ...inputEst, width: 100 }} type="number" min="0" step="0.1"
               value={item.usoPorAtendimento || ""} onChange={(e) => setCampo("usoPorAtendimento", e.target.value)} />
           </Campo>
           {N(item.quantidadeComprada) > 0 && (
@@ -2865,7 +2856,7 @@ function ItemCustoVariavel({ item, onChange, onRemove, contexto }) {
               </Campo>
               {insumoRef && insumoRef.modo === "unidade" && (
                 <Campo label="Quanto usa por atendimento" hint="ex: 1 touca, ou 0,5 (meia unidade)">
-                  <input className={CAMPO + " font-num"} style={{ ...inputEst, width: 100 }} type="number" min="0" step="0.1"
+                  <input className={`${CAMPO} font-num`} style={{ ...inputEst, width: 100 }} type="number" min="0" step="0.1"
                     value={item.usoPorAtendimento || ""} onChange={(e) => setCampo("usoPorAtendimento", e.target.value)} />
                 </Campo>
               )}
@@ -2875,7 +2866,7 @@ function ItemCustoVariavel({ item, onChange, onRemove, contexto }) {
                 return (
                   <Campo label="% deste insumo alocado a este serviço" hint="some entre os serviços que usam o mesmo insumo — não passe de 100% no total">
                     <div className="flex items-center gap-1">
-                      <input className={CAMPO + " font-num"} style={{ ...inputEst, width: 70 }} type="number" min="0" max="100"
+                      <input className={`${CAMPO} font-num`} style={{ ...inputEst, width: 70 }} type="number" min="0" max="100"
                         value={item.percentualAlocado || ""} onChange={(e) => setCampo("percentualAlocado", e.target.value)} />
                       <span className="text-sm" style={{ color: t.textMuted }}>%</span>
                     </div>
@@ -2931,7 +2922,7 @@ function ListaCustosVariaveis({ itens, setItens, contexto }) {
           <ItemCustoVariavel key={item.id} item={item} onChange={updateItem} onRemove={() => remove(item.id)} contexto={contexto} />
         ))}
       </div>
-      <button onClick={add} className="btn-press mt-2 inline-flex items-center gap-1 text-xs font-medium rounded-lg px-2.5 py-1.5"
+      <button type="button" onClick={add} className="btn-press mt-2 inline-flex items-center gap-1 text-xs font-medium rounded-lg px-2.5 py-1.5"
         style={{ color: t.primaryText, background: t.primarySoft }}>
         <Plus size={13} /> adicionar item
       </button>
@@ -2957,7 +2948,7 @@ function ServicoCard({ s, onEditar, onExcluir, onAceitarNovoPreco, diasMesNegoci
 
   return (
     <div className="fade-up rounded-2xl" style={{ background: t.surface, border: `1px solid ${t.border}`, borderLeft: `4px solid ${statusCor}`, boxShadow: t.shadow, overflow: "hidden" }}>
-      <button onClick={() => setExpandido((v) => !v)} className="btn-press w-full text-left p-4" aria-label={`Ver detalhes de ${s.nome}`} aria-expanded={expandido}>
+      <button type="button" onClick={() => setExpandido((v) => !v)} className="btn-press w-full text-left p-4" aria-label={`Ver detalhes de ${s.nome}`} aria-expanded={expandido}>
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
             <p className="font-semibold text-sm truncate" style={{ color: t.text }}>{s.nome}</p>
@@ -3002,6 +2993,7 @@ function ServicoCard({ s, onEditar, onExcluir, onAceitarNovoPreco, diasMesNegoci
       </button>
 
       {expandido && (
+        // biome-ignore lint/a11y/useKeyWithClickEvents lint/a11y/noStaticElementInteractions: só impede que cliques no conteúdo fechem o cartão
         <div className="px-4 pb-4 pop-in" style={{ borderTop: `1px solid ${t.border}` }} onClick={(e) => e.stopPropagation()}>
           {ok && s.precoSeparadoReferencia !== undefined && s.precoSeparadoReferencia !== null && (
             <div className="mt-3">
@@ -3028,7 +3020,7 @@ function ServicoCard({ s, onEditar, onExcluir, onAceitarNovoPreco, diasMesNegoci
             <p className="text-xs" style={{ color: t.danger }}>Não dá pra decompor — os dados deste serviço ficaram inválidos com a configuração atual do negócio.</p>
           )}
 
-          <button onClick={() => onEditar(s)} className="btn-press touch-target w-full mt-3 inline-flex items-center justify-center gap-1.5 rounded-xl px-3 py-2 text-sm font-semibold"
+          <button type="button" onClick={() => onEditar(s)} className="btn-press touch-target w-full mt-3 inline-flex items-center justify-center gap-1.5 rounded-xl px-3 py-2 text-sm font-semibold"
             style={{ background: t.primaryText, color: t.onPrimary }}>
             <Pencil size={14} /> Editar serviço
           </button>
@@ -3039,7 +3031,7 @@ function ServicoCard({ s, onEditar, onExcluir, onAceitarNovoPreco, diasMesNegoci
         <div className="px-4 pb-3">
           <div className="pop-in flex items-center justify-between gap-2 rounded-lg p-2 text-[11px]" style={{ background: t.warningSoft, color: t.warningText }}>
             <span>Preço desatualizado — recalculado de {fmtBRL(baseline)} para {fmtBRL(s.calc.preco)}</span>
-            <button onClick={() => onAceitarNovoPreco(s)} className="btn-press font-semibold underline shrink-0">Aceitar</button>
+            <button type="button" onClick={() => onAceitarNovoPreco(s)} className="btn-press font-semibold underline shrink-0">Aceitar</button>
           </div>
         </div>
       )}
@@ -3047,16 +3039,16 @@ function ServicoCard({ s, onEditar, onExcluir, onAceitarNovoPreco, diasMesNegoci
         <div className="px-4 pb-3">
           <div className="pop-in flex items-center gap-2 text-xs" style={{ color: t.danger }}>
             <span>Excluir "{s.nome}"?</span>
-            <button onClick={() => onExcluir(s.id)} className="btn-press font-semibold underline">Sim, excluir</button>
-            <button onClick={() => setConfirmando(false)} className="btn-press underline" style={{ color: t.textMuted }}>Cancelar</button>
+            <button type="button" onClick={() => onExcluir(s.id)} className="btn-press font-semibold underline">Sim, excluir</button>
+            <button type="button" onClick={() => setConfirmando(false)} className="btn-press underline" style={{ color: t.textMuted }}>Cancelar</button>
           </div>
         </div>
       )}
 
       <div className="flex gap-1 justify-end px-3 pb-3">
-        <button onClick={() => onEditar(s)} aria-label={`Editar ${s.nome}`} className="btn-press touch-target-48 p-1.5 rounded-lg" style={{ color: t.primaryText }}><Pencil size={14} /></button>
+        <button type="button" onClick={() => onEditar(s)} aria-label={`Editar ${s.nome}`} className="btn-press touch-target-48 p-1.5 rounded-lg" style={{ color: t.primaryText }}><Pencil size={14} /></button>
         {!confirmando && (
-          <button onClick={() => setConfirmando(true)} aria-label={`Excluir ${s.nome}`} className="btn-press touch-target-48 p-1.5 rounded-lg" style={{ color: t.danger }}><Trash2 size={14} /></button>
+          <button type="button" onClick={() => setConfirmando(true)} aria-label={`Excluir ${s.nome}`} className="btn-press touch-target-48 p-1.5 rounded-lg" style={{ color: t.danger }}><Trash2 size={14} /></button>
         )}
       </div>
     </div>
@@ -3088,7 +3080,7 @@ function BibliotecaServicos({ servicosCalc, onEditar, onExcluir, onAceitarNovoPr
       <div className="rounded-2xl p-8 text-center mb-6" style={{ background: t.surfaceAlt, border: `1px dashed ${t.border}` }}>
         <Calculator size={22} className="mx-auto mb-3" style={{ color: t.textMuted }} />
         <p className="text-sm font-medium" style={{ color: t.text }}>Nenhum serviço salvo ainda</p>
-        <button onClick={onNovo} className="btn-press mt-3 rounded-xl px-4 py-2 text-sm font-semibold" style={{ background: t.success, color: t.onSuccess }}>
+        <button type="button" onClick={onNovo} className="btn-press mt-3 rounded-xl px-4 py-2 text-sm font-semibold" style={{ background: t.success, color: t.onSuccess }}>
           Criar meu primeiro serviço
         </button>
       </div>
@@ -3099,7 +3091,7 @@ function BibliotecaServicos({ servicosCalc, onEditar, onExcluir, onAceitarNovoPr
     <div className="mb-6">
       <div className="flex items-center justify-between mb-3">
         <p className="text-sm font-semibold" style={{ color: t.text }}>Meus serviços</p>
-        <button onClick={onNovo} className="btn-press inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-semibold" style={{ background: t.success, color: t.onSuccess }}>
+        <button type="button" onClick={onNovo} className="btn-press inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-semibold" style={{ background: t.success, color: t.onSuccess }}>
           <Plus size={13} /> Novo serviço
         </button>
       </div>
@@ -3176,7 +3168,7 @@ function MontadorPacote({ servicosCalc, onMontar, nd }) {
 
   return (
     <div className="rounded-2xl p-4 mb-4" style={{ background: t.surface, border: `1px dashed ${t.primaryText}66` }}>
-      <button onClick={() => setAberto((v) => !v)} className="btn-press touch-target flex items-center justify-between w-full" aria-expanded={aberto}>
+      <button type="button" onClick={() => setAberto((v) => !v)} className="btn-press touch-target flex items-center justify-between w-full" aria-expanded={aberto}>
         <span className="text-sm font-semibold inline-flex items-center gap-1.5" style={{ color: t.text }}>
           <Sparkles size={14} style={{ color: t.primaryText }} /> Montar pacote de serviços
         </span>
@@ -3217,7 +3209,7 @@ function MontadorPacote({ servicosCalc, onMontar, nd }) {
                   Não dá pra calcular um piso pra esse combo — a soma de comissão + taxa de cartão + imposto + margem já passa de 100% mesmo antes do desconto.
                 </p>
               )}
-              <button onClick={() => onMontar(itensSelecionados, somaPreco, somaHoras)}
+              <button type="button" onClick={() => onMontar(itensSelecionados, somaPreco, somaHoras)}
                 className="btn-press touch-target w-full mt-2 rounded-xl px-3 py-2 text-sm font-semibold" style={{ background: t.primaryText, color: t.onPrimary }}>
                 Montar pacote com esses {selecionados.length} serviços
               </button>
@@ -3238,7 +3230,7 @@ function ComparativoPacote({ somaSeparado, precoPacote }) {
   const diferencaPct = somaSeparado > 0 ? (diferenca / somaSeparado) * 100 : 0;
   const economizou = diferenca > 0.005;
   return (
-    <div className="rounded-2xl p-4" style={{ background: economizou ? t.successSoft : t.surfaceAlt, border: `1px solid ${economizou ? t.success + "55" : t.border}` }}>
+    <div className="rounded-2xl p-4" style={{ background: economizou ? t.successSoft : t.surfaceAlt, border: `1px solid ${economizou ? `${t.success}55` : t.border}` }}>
       <p className="text-xs font-semibold mb-2" style={{ color: economizou ? t.successText : t.text }}>Pacote × serviços separados</p>
       <div className="flex items-center justify-between gap-2">
         <div>
@@ -3378,7 +3370,7 @@ function ResultadoReversoCard({ r, margemMetaPct, horas, diasMesNegocio }) {
           </div>
         </div>
 
-        <button onClick={() => setDetalheAberto(!detalheAberto)} className="btn-press text-xs font-medium mt-3" style={{ color: t.primaryText }}
+        <button type="button" onClick={() => setDetalheAberto(!detalheAberto)} className="btn-press text-xs font-medium mt-3" style={{ color: t.primaryText }}
           aria-expanded={detalheAberto} aria-controls="detalhe-custo-reverso">
           {detalheAberto ? "ocultar detalhamento do custo" : "ver detalhamento do custo"}
         </button>
@@ -3415,7 +3407,7 @@ function SimuladorSensibilidade({ precoBase, custosVariaveis, comissaoPct, taxaC
 
   return (
     <div className="rounded-2xl p-5" style={{ background: t.surface, border: `1px solid ${t.border}`, boxShadow: t.shadow }}>
-      <button onClick={() => setAberto(!aberto)} className="btn-press flex items-center justify-between w-full" aria-expanded={aberto} aria-controls="simulador-sensibilidade">
+      <button type="button" onClick={() => setAberto(!aberto)} className="btn-press flex items-center justify-between w-full" aria-expanded={aberto} aria-controls="simulador-sensibilidade">
         <span className="text-sm font-semibold" style={{ color: t.text }}>Simulador de sensibilidade</span>
         <span className="text-xs font-medium" style={{ color: t.primaryText }}>{aberto ? "ocultar" : "explorar"}</span>
       </button>
@@ -3576,7 +3568,7 @@ function AbasServicos({ servicos, servicoAtivoId, onSelecionar, onNovo }) {
       {servicos.map((s) => {
         const ativo = servicoAtivoId === s.id;
         return (
-          <button key={s.id} role="tab" aria-selected={ativo} onClick={() => onSelecionar(s)}
+          <button type="button" key={s.id} role="tab" aria-selected={ativo} onClick={() => onSelecionar(s)}
             className="btn-press shrink-0 rounded-lg px-3 py-1.5 text-xs font-medium whitespace-nowrap"
             style={{
               background: ativo ? t.primary : t.surfaceAlt,
@@ -3587,7 +3579,7 @@ function AbasServicos({ servicos, servicoAtivoId, onSelecionar, onNovo }) {
           </button>
         );
       })}
-      <button onClick={onNovo} className="btn-press shrink-0 rounded-lg px-3 py-1.5 text-xs font-semibold whitespace-nowrap"
+      <button type="button" onClick={onNovo} className="btn-press shrink-0 rounded-lg px-3 py-1.5 text-xs font-semibold whitespace-nowrap"
         style={{ background: "transparent", color: t.primaryText, border: `1px dashed ${t.primaryText}88` }}>
         <Plus size={12} className="inline -mt-0.5 mr-0.5" />Novo
       </button>
@@ -3611,7 +3603,7 @@ function BarraProgressoWizard({ passo, onIr }) {
     <div className="flex items-center mb-4" role="tablist" aria-label="Etapas do novo serviço">
       {PASSOS_WIZARD.map((p, i) => (
         <React.Fragment key={p.id}>
-          <button role="tab" aria-selected={passo === p.id} onClick={() => onIr(p.id)}
+          <button type="button" role="tab" aria-selected={passo === p.id} onClick={() => onIr(p.id)}
             className="btn-press touch-target flex flex-col items-center gap-1" style={{ flexShrink: 0 }}
             aria-label={`Ir pro passo ${p.id}: ${p.label}`}>
             <span className="flex items-center justify-center rounded-full font-num text-[11px] font-bold"
@@ -3932,7 +3924,7 @@ function Calculadora({ nd, negocioConfigurado, irParaNegocio, servicos, onSalvar
         <p className="text-xs mt-1 mb-4" style={{ color: t.textMuted }}>
           Custos fixos, capacidade e regime tributário ficam configurados uma vez só, na aba Negócio.
         </p>
-        <button onClick={irParaNegocio} className="btn-press rounded-xl px-4 py-2 text-sm font-semibold" style={{ background: t.success, color: t.onSuccess }}>
+        <button type="button" onClick={irParaNegocio} className="btn-press rounded-xl px-4 py-2 text-sm font-semibold" style={{ background: t.success, color: t.onSuccess }}>
           Ir para Negócio
         </button>
       </div>
@@ -3963,18 +3955,18 @@ function Calculadora({ nd, negocioConfigurado, irParaNegocio, servicos, onSalvar
               <p className="text-sm font-semibold" style={{ color: t.text }}>
                 {servicoEmEdicao ? `Editando: ${servicoEmEdicao.nome}` : "Novo serviço"}
               </p>
-              <button onClick={fecharFormulario} className="btn-press touch-target p-1 rounded-lg" style={{ color: t.textMuted }} aria-label="Fechar formulário">
+              <button type="button" onClick={fecharFormulario} className="btn-press touch-target p-1 rounded-lg" style={{ color: t.textMuted }} aria-label="Fechar formulário">
                 <X size={16} />
               </button>
             </div>
 
             <div className="flex gap-1 p-1 rounded-xl" style={{ background: t.surfaceAlt }} role="tablist" aria-label="Modo de cálculo">
-              <button role="tab" aria-selected={modo === "descobrir"} onClick={() => setModo("descobrir")}
+              <button type="button" role="tab" aria-selected={modo === "descobrir"} onClick={() => setModo("descobrir")}
                 className="btn-press flex-1 rounded-lg px-2 py-2 text-xs font-semibold"
                 style={{ background: modo === "descobrir" ? t.surface : "transparent", color: modo === "descobrir" ? t.text : t.textMuted, boxShadow: modo === "descobrir" ? t.shadow : "none" }}>
                 Quero descobrir o preço
               </button>
-              <button role="tab" aria-selected={modo === "ja-tenho"} onClick={() => setModo("ja-tenho")}
+              <button type="button" role="tab" aria-selected={modo === "ja-tenho"} onClick={() => setModo("ja-tenho")}
                 className="btn-press flex-1 rounded-lg px-2 py-2 text-xs font-semibold"
                 style={{ background: modo === "ja-tenho" ? t.surface : "transparent", color: modo === "ja-tenho" ? t.text : t.textMuted, boxShadow: modo === "ja-tenho" ? t.shadow : "none" }}>
                 Já tenho um preço
@@ -4022,7 +4014,7 @@ function Calculadora({ nd, negocioConfigurado, irParaNegocio, servicos, onSalvar
               <Campo label="Preço cobrado pelo serviço (R$)" hint="O que você já cobra hoje, ou pretende cobrar.">
                 <input
                   ref={precoInputRef}
-                  className={CAMPO + " font-num"} style={{ background: t.surface, border: `1px solid ${t.border}`, color: t.text }}
+                  className={`${CAMPO} font-num`} style={{ background: t.surface, border: `1px solid ${t.border}`, color: t.text }}
                   type="text" inputMode="decimal" placeholder="R$ 0,00"
                   value={precoFocado ? precoCobrado : (N(precoCobrado) > 0 ? N(precoCobrado).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }) : "")}
                   onFocus={() => setPrecoFocado(true)}
@@ -4045,7 +4037,7 @@ function Calculadora({ nd, negocioConfigurado, irParaNegocio, servicos, onSalvar
                   <CampoNumero value={atendimentosMes} onChange={setAtendimentosMes} />
                 </Campo>
                 <Campo label="Horas por atendimento">
-                  <input className={CAMPO + " font-num"} style={{ background: t.surface, border: `1px solid ${t.border}`, color: t.text }}
+                  <input className={`${CAMPO} font-num`} style={{ background: t.surface, border: `1px solid ${t.border}`, color: t.text }}
                     type="number" min="0" step="0.25" value={horasAtendimento} onChange={(e) => setHorasAtendimento(e.target.value)} />
                 </Campo>
               </div>
@@ -4066,14 +4058,14 @@ function Calculadora({ nd, negocioConfigurado, irParaNegocio, servicos, onSalvar
 
             <div className="pt-1" style={{ borderTop: `1px solid ${t.border}` }}>
               {!confirmandoExclusaoForm ? (
-                <button onClick={() => setConfirmandoExclusaoForm(true)} className="btn-press text-xs font-medium mt-3" style={{ color: t.danger }}>
+                <button type="button" onClick={() => setConfirmandoExclusaoForm(true)} className="btn-press text-xs font-medium mt-3" style={{ color: t.danger }}>
                   Excluir este serviço
                 </button>
               ) : (
                 <div className="flex items-center gap-2 text-xs mt-3" style={{ color: t.danger }}>
                   <span>Tem certeza?</span>
-                  <button onClick={excluirDoFormulario} className="btn-press font-semibold underline">Sim, excluir</button>
-                  <button onClick={() => setConfirmandoExclusaoForm(false)} className="btn-press underline" style={{ color: t.textMuted }}>Cancelar</button>
+                  <button type="button" onClick={excluirDoFormulario} className="btn-press font-semibold underline">Sim, excluir</button>
+                  <button type="button" onClick={() => setConfirmandoExclusaoForm(false)} className="btn-press underline" style={{ color: t.textMuted }}>Cancelar</button>
                 </div>
               )}
             </div>
@@ -4122,14 +4114,14 @@ function Calculadora({ nd, negocioConfigurado, irParaNegocio, servicos, onSalvar
                 <div className="flex items-center justify-center pb-1">
                   <IndicadorAutoSalvar status={statusSalvarServico} />
                 </div>
-                <button onClick={salvar} className="btn-press w-full inline-flex items-center justify-center gap-1.5 rounded-xl px-4 py-2 text-sm font-semibold" style={{ background: t.success, color: t.onSuccess }}>
+                <button type="button" onClick={salvar} className="btn-press w-full inline-flex items-center justify-center gap-1.5 rounded-xl px-4 py-2 text-sm font-semibold" style={{ background: t.success, color: t.onSuccess }}>
                   <Save size={14} /> Salvar alterações
                 </button>
                 <div className="flex gap-2">
-                  <button onClick={salvarComoNovo} className="btn-press flex-1 rounded-xl px-3 py-2 text-xs font-semibold" style={{ background: t.primarySoft, color: t.primaryText }}>
+                  <button type="button" onClick={salvarComoNovo} className="btn-press flex-1 rounded-xl px-3 py-2 text-xs font-semibold" style={{ background: t.primarySoft, color: t.primaryText }}>
                     Salvar como novo
                   </button>
-                  <button onClick={fecharFormulario} className="btn-press flex-1 rounded-xl px-3 py-2 text-xs font-semibold" style={{ background: t.surfaceAlt, color: t.textMuted }}>
+                  <button type="button" onClick={fecharFormulario} className="btn-press flex-1 rounded-xl px-3 py-2 text-xs font-semibold" style={{ background: t.surfaceAlt, color: t.textMuted }}>
                     Cancelar
                   </button>
                 </div>
@@ -4143,7 +4135,7 @@ function Calculadora({ nd, negocioConfigurado, irParaNegocio, servicos, onSalvar
         <div className="rounded-2xl p-5 pop-in" style={cardStyle}>
           <div className="flex items-center justify-between mb-1">
             <p className="text-sm font-semibold" style={{ color: t.text }}>Novo serviço</p>
-            <button onClick={fecharFormulario} className="btn-press touch-target p-1 rounded-lg" style={{ color: t.textMuted }} aria-label="Fechar formulário">
+            <button type="button" onClick={fecharFormulario} className="btn-press touch-target p-1 rounded-lg" style={{ color: t.textMuted }} aria-label="Fechar formulário">
               <X size={16} />
             </button>
           </div>
@@ -4169,12 +4161,12 @@ function Calculadora({ nd, negocioConfigurado, irParaNegocio, servicos, onSalvar
             <div className="space-y-4 fade-up">
               <div>
                 <div className="flex gap-1 p-1 rounded-xl" style={{ background: t.surfaceAlt }} role="tablist" aria-label="Modo de cálculo">
-                  <button role="tab" aria-selected={modo === "descobrir"} onClick={() => setModo("descobrir")}
+                  <button type="button" role="tab" aria-selected={modo === "descobrir"} onClick={() => setModo("descobrir")}
                     className="btn-press flex-1 rounded-lg px-2 py-2 text-xs font-semibold"
                     style={{ background: modo === "descobrir" ? t.surface : "transparent", color: modo === "descobrir" ? t.text : t.textMuted, boxShadow: modo === "descobrir" ? t.shadow : "none" }}>
                     Quero descobrir o preço
                   </button>
-                  <button role="tab" aria-selected={modo === "ja-tenho"} onClick={() => setModo("ja-tenho")}
+                  <button type="button" role="tab" aria-selected={modo === "ja-tenho"} onClick={() => setModo("ja-tenho")}
                     className="btn-press flex-1 rounded-lg px-2 py-2 text-xs font-semibold"
                     style={{ background: modo === "ja-tenho" ? t.surface : "transparent", color: modo === "ja-tenho" ? t.text : t.textMuted, boxShadow: modo === "ja-tenho" ? t.shadow : "none" }}>
                     Já tenho um preço
@@ -4239,7 +4231,7 @@ function Calculadora({ nd, negocioConfigurado, irParaNegocio, servicos, onSalvar
                   <CampoNumero value={atendimentosMes} onChange={setAtendimentosMes} />
                 </Campo>
                 <Campo label="Horas por atendimento">
-                  <input className={CAMPO + " font-num"} style={{ background: t.surface, border: `1px solid ${t.border}`, color: t.text }}
+                  <input className={`${CAMPO} font-num`} style={{ background: t.surface, border: `1px solid ${t.border}`, color: t.text }}
                     type="number" min="0" step="0.25" value={horasAtendimento} onChange={(e) => setHorasAtendimento(e.target.value)} />
                 </Campo>
               </div>
@@ -4273,7 +4265,7 @@ function Calculadora({ nd, negocioConfigurado, irParaNegocio, servicos, onSalvar
                   <Campo label="Preço cobrado pelo serviço (R$)" hint="O que você já cobra hoje, ou pretende cobrar.">
                     <input
                       ref={precoInputRef}
-                      className={CAMPO + " font-num"} style={{ background: t.surface, border: `1px solid ${t.border}`, color: t.text }}
+                      className={`${CAMPO} font-num`} style={{ background: t.surface, border: `1px solid ${t.border}`, color: t.text }}
                       type="text" inputMode="decimal" placeholder="R$ 0,00"
                       value={precoFocado ? precoCobrado : (N(precoCobrado) > 0 ? N(precoCobrado).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }) : "")}
                       onFocus={() => setPrecoFocado(true)}
@@ -4331,7 +4323,7 @@ function Calculadora({ nd, negocioConfigurado, irParaNegocio, servicos, onSalvar
               {resultadoAtivo.status === "ok" && !jornadaIrreal ? (
                 <div className="rounded-2xl p-4 space-y-2" style={{ background: t.surfaceAlt }}>
                   <BannerNaoSalvo sujo={sujo} aoSalvarLabel="Salvar como serviço" />
-                  <button onClick={salvar} className="btn-press w-full inline-flex items-center justify-center gap-1.5 rounded-xl px-4 py-2 text-sm font-semibold" style={{ background: t.success, color: t.onSuccess }}>
+                  <button type="button" onClick={salvar} className="btn-press w-full inline-flex items-center justify-center gap-1.5 rounded-xl px-4 py-2 text-sm font-semibold" style={{ background: t.success, color: t.onSuccess }}>
                     <Save size={14} /> Salvar como serviço
                   </button>
                 </div>
@@ -4345,12 +4337,12 @@ function Calculadora({ nd, negocioConfigurado, irParaNegocio, servicos, onSalvar
 
           <div className="flex gap-2 mt-5 pt-4" style={{ borderTop: `1px solid ${t.border}` }}>
             {passoWizard > 1 && (
-              <button onClick={() => setPassoWizard((p) => p - 1)} className="btn-press flex-1 rounded-xl px-3 py-2 text-sm font-semibold" style={{ background: t.surfaceAlt, color: t.text }}>
+              <button type="button" onClick={() => setPassoWizard((p) => p - 1)} className="btn-press flex-1 rounded-xl px-3 py-2 text-sm font-semibold" style={{ background: t.surfaceAlt, color: t.text }}>
                 Voltar
               </button>
             )}
             {passoWizard < 5 && (
-              <button onClick={() => setPassoWizard((p) => p + 1)} className="btn-press flex-1 rounded-xl px-3 py-2 text-sm font-semibold" style={{ background: t.primaryText, color: t.onPrimary }}>
+              <button type="button" onClick={() => setPassoWizard((p) => p + 1)} className="btn-press flex-1 rounded-xl px-3 py-2 text-sm font-semibold" style={{ background: t.primaryText, color: t.onPrimary }}>
                 Próximo
               </button>
             )}
@@ -4559,7 +4551,7 @@ function Painel({ nd, negocio, servicos, onRemoverServico, onEditarServico }) {
     setFechamentos((prev) => (prev || []).filter((f) => f.mes !== mes));
   };
   const salvarFechamentosEmLote = (registros) => {
-    registros.forEach((f) => salvarComFallback(`fechamento:${f.mes}`, JSON.stringify(f)));
+    registros.forEach((f) => { salvarComFallback(`fechamento:${f.mes}`, JSON.stringify(f)); });
     setFechamentos((prev) => [...(prev || []), ...registros].sort((a, b) => b.mes.localeCompare(a.mes)));
   };
 
@@ -4708,19 +4700,19 @@ function Painel({ nd, negocio, servicos, onRemoverServico, onEditarServico }) {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 no-print">
         <p className="text-xs" style={{ color: t.textMuted }}>Exportar este painel</p>
         <div className="flex flex-wrap gap-2">
-          <button onClick={exportarExcel} className="btn-press inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold"
+          <button type="button" onClick={exportarExcel} className="btn-press inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold"
             style={{ background: t.success, color: t.onSuccess }}>
             <Download size={13} /> Baixar Excel
           </button>
-          <button onClick={() => window.print()} className="btn-press inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold"
+          <button type="button" onClick={() => window.print()} className="btn-press inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold"
             style={{ background: t.surfaceAlt, color: t.text, border: `1px solid ${t.border}` }}>
             <Printer size={13} /> Imprimir / PDF
           </button>
-          <button onClick={compartilharResumo} className="btn-press touch-target inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold"
+          <button type="button" onClick={compartilharResumo} className="btn-press touch-target inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold"
             style={{ background: t.surfaceAlt, color: t.text, border: `1px solid ${t.border}` }} aria-label="Compartilhar resumo">
             <Share2 size={13} /> Compartilhar
           </button>
-          <button onClick={exportarMemorial} className="btn-press touch-target inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold"
+          <button type="button" onClick={exportarMemorial} className="btn-press touch-target inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold"
             style={{ background: t.surfaceAlt, color: t.text, border: `1px solid ${t.border}` }}>
             <Printer size={13} /> Memorial de cálculo (PDF)
           </button>
@@ -4871,8 +4863,8 @@ function CardServicoPainel({ s, onEditar, onExcluir, diasMesNegocio }) {
             )}
           </div>
           <div className="flex gap-2 shrink-0">
-            <button onClick={() => onEditar(s)} className="btn-press touch-target-48" style={{ color: t.primaryText }} aria-label={`Editar ${s.nome}`}><Pencil size={14} /></button>
-            <button onClick={() => onExcluir(s.id)} className="btn-press touch-target-48" style={{ color: t.danger }} aria-label={`Excluir ${s.nome}`}><Trash2 size={14} /></button>
+            <button type="button" onClick={() => onEditar(s)} className="btn-press touch-target-48" style={{ color: t.primaryText }} aria-label={`Editar ${s.nome}`}><Pencil size={14} /></button>
+            <button type="button" onClick={() => onExcluir(s.id)} className="btn-press touch-target-48" style={{ color: t.danger }} aria-label={`Excluir ${s.nome}`}><Trash2 size={14} /></button>
           </div>
         </div>
         {ok ? (
@@ -4898,7 +4890,7 @@ function CardServicoPainel({ s, onEditar, onExcluir, diasMesNegocio }) {
           </p>
         )}
         {ok && (
-          <button onClick={() => setExpandido((v) => !v)} className="btn-press touch-target mt-2.5 inline-flex items-center gap-1 text-xs font-medium" style={{ color: t.primaryText }}
+          <button type="button" onClick={() => setExpandido((v) => !v)} className="btn-press touch-target mt-2.5 inline-flex items-center gap-1 text-xs font-medium" style={{ color: t.primaryText }}
             aria-expanded={expandido}>
             {expandido ? "ocultar decomposição" : "ver decomposição do preço"}
             <ChevronDown size={13} style={{ transform: expandido ? "rotate(180deg)" : "none", transition: "transform .2s ease" }} />
@@ -4911,7 +4903,7 @@ function CardServicoPainel({ s, onEditar, onExcluir, diasMesNegocio }) {
           <p className="text-xs font-semibold mt-3 mb-2" style={{ color: t.text }}>Decomposição do preço</p>
           <GraficoRoscaPreco materiais={s.calc.totalVariaveis} custoFixo={s.calc.custoFixoRateado}
             taxas={s.calc.valorComissao + s.calc.valorTaxaCartao + s.calc.valorImposto} lucro={lucroReal} preco={s.calc.preco} />
-          <button onClick={() => onEditar(s)} className="btn-press touch-target w-full mt-3 inline-flex items-center justify-center gap-1.5 rounded-xl px-3 py-2 text-sm font-semibold"
+          <button type="button" onClick={() => onEditar(s)} className="btn-press touch-target w-full mt-3 inline-flex items-center justify-center gap-1.5 rounded-xl px-3 py-2 text-sm font-semibold"
             style={{ background: t.primaryText, color: t.onPrimary }}>
             <Pencil size={14} /> Editar serviço
           </button>
@@ -5082,8 +5074,8 @@ function DRECard({ dre, origem = "projecao", mesLabel }) {
         {linhas.map((l) => (
           <div key={l.label} className="flex items-center justify-between py-1"
             style={{ borderTop: l.sub || l.forte ? `1px solid ${t.border}` : "none" }}>
-            <span className={"text-sm min-w-0 " + (l.forte ? "font-semibold" : "")} style={{ color: l.sub || l.forte ? t.text : t.textMuted }}>{l.label}</span>
-            <span className={"font-num text-sm shrink-0 whitespace-nowrap pl-3 " + (l.forte ? "font-bold" : "font-medium")}
+            <span className={`text-sm min-w-0 ${l.forte ? "font-semibold" : ""}`} style={{ color: l.sub || l.forte ? t.text : t.textMuted }}>{l.label}</span>
+            <span className={`font-num text-sm shrink-0 whitespace-nowrap pl-3 ${l.forte ? "font-bold" : "font-medium"}`}
               style={{ color: l.valor < 0 && !l.forte && !l.sub ? t.danger : t.text }}>
               {fmtBRL(l.valor)}
             </span>
@@ -5112,6 +5104,7 @@ function InfoConceito({ texto, referencia }) {
         <Info size={10} strokeWidth={2.75} />
       </button>
       {aberto && createPortal(
+        // biome-ignore lint/a11y/useKeyWithClickEvents: tocar no balão fecha; pelo teclado ele fecha com Esc ou ao sair do botão "?"
         <span
           ref={balaoRef} role="tooltip"
           onClick={(e) => { e.stopPropagation(); setAberto(false); }}
@@ -5233,6 +5226,7 @@ function EscadaPontoEquilibrio({ receita, rcm, financeiro, contabil, economico, 
                 </div>
               </div>
               {calculavel && (
+                // biome-ignore lint/a11y/useSemanticElements: barra desenhada com div para seguir as cores do tema; role="meter" informa o valor a leitores de tela
                 <div className="mt-1.5 rounded-full overflow-hidden" style={{ height: 6, background: trilho }}
                   role="meter" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(pctCoberto)}
                   aria-label={`${d.pergunta} A receita projetada cobre ${Math.round(pctCoberto)}% deste ponto.`}>
@@ -5277,22 +5271,6 @@ function IndicadorCard({ titulo, icon: Icon, info, children }) {
     </div>
   );
 }
-function LinhaIndicador({ label, valor, sub, info }) {
-  const t = useT();
-  return (
-    <div className="mb-1.5">
-      <div className="flex items-baseline justify-between">
-        <span className="text-xs inline-flex items-center" style={{ color: t.textMuted }}>
-          {label}
-          {info && <InfoConceito texto={info.texto} referencia={info.referencia} />}
-        </span>
-        <span className="font-num text-sm font-medium" style={{ color: t.text }}>{valor}</span>
-      </div>
-      {sub && <p className="text-[10px]" style={{ color: t.textMuted }}>{sub}</p>}
-    </div>
-  );
-}
-
 /* ======================================================================= */
 /* Fechamento Mensal — o registro do que REALMENTE aconteceu no mês.       */
 /* Fase 1 do módulo de Evolução de Desempenho: sem isso, não existe        */
@@ -5588,12 +5566,12 @@ function FormularioFechamento({ mes, nd, servicos, profissionais, registroExiste
         <div className="grid grid-cols-2 gap-2">
           <div>
             <span className="text-xs font-medium block mb-1" style={{ color: t.text }}>Faturamento bruto do mês</span>
-            <div className={CAMPO + " font-num"} style={{ background: t.surfaceAlt, border: `1px dashed ${t.border}`, color: t.text }}>{fmtBRL(faturamentoBrutoAuto)}</div>
+            <div className={`${CAMPO} font-num`} style={{ background: t.surfaceAlt, border: `1px dashed ${t.border}`, color: t.text }}>{fmtBRL(faturamentoBrutoAuto)}</div>
             <p className="text-[10px] mt-1" style={{ color: t.textMuted }}>Soma do detalhamento abaixo.</p>
           </div>
           <div>
             <span className="text-xs font-medium block mb-1" style={{ color: t.text }}>Atendimentos no mês</span>
-            <div className={CAMPO + " font-num"} style={{ background: t.surfaceAlt, border: `1px dashed ${t.border}`, color: t.text }}>{atendimentosTotaisAuto}</div>
+            <div className={`${CAMPO} font-num`} style={{ background: t.surfaceAlt, border: `1px dashed ${t.border}`, color: t.text }}>{atendimentosTotaisAuto}</div>
             <p className="text-[10px] mt-1" style={{ color: t.textMuted }}>Soma do detalhamento abaixo.</p>
           </div>
         </div>
@@ -5608,7 +5586,7 @@ function FormularioFechamento({ mes, nd, servicos, profissionais, registroExiste
         </>
       )}
 
-      <button onClick={() => setMostrarPorServico((v) => !v)} className="text-[11px] font-medium underline btn-press" style={{ color: t.primaryText }}>
+      <button type="button" onClick={() => setMostrarPorServico((v) => !v)} className="text-[11px] font-medium underline btn-press" style={{ color: t.primaryText }}>
         {mostrarPorServico ? "ocultar detalhamento por serviço (voltar a digitar o total manualmente)" : "detalhar por serviço (calcula o total sozinho, e deixa o histórico mais preciso)"}
       </button>
 
@@ -5626,12 +5604,13 @@ function FormularioFechamento({ mes, nd, servicos, profissionais, registroExiste
                   <label className="flex-1 block">
                     <span className="text-[10px]" style={{ color: t.textMuted }}>Atendimentos</span>
                     <input
-                      type="number" min="0" inputMode="numeric" className={CAMPO + " font-num"}
+                      type="number" min="0" inputMode="numeric" className={`${CAMPO} font-num`}
                       style={{ background: t.surface, border: `1px solid ${t.border}`, color: t.text }}
                       value={raw?.quantidade ?? ""} onChange={(e) => setQuantidade(s.id, e.target.value)}
                       placeholder="0" aria-label={`Atendimentos de ${s.nome}`}
                     />
                   </label>
+                  {/* biome-ignore lint/a11y/noLabelWithoutControl: CampoMoeda renderiza o input dentro do label */}
                   <label className="flex-1 block">
                     <span className="text-[10px]" style={{ color: t.textMuted }}>Valor cobrado — real, por atendimento (opcional)</span>
                     <CampoMoeda value={raw?.valorUnitarioReal ?? ""} onChange={(v) => setValorUnitario(s.id, v)} />
@@ -5653,7 +5632,7 @@ function FormularioFechamento({ mes, nd, servicos, profissionais, registroExiste
 
       {profissionaisAtivos.length > 0 && (
         <>
-          <button onClick={() => setMostrarPorProfissional((v) => !v)} className="text-[11px] font-medium underline btn-press" style={{ color: t.primaryText }}>
+          <button type="button" onClick={() => setMostrarPorProfissional((v) => !v)} className="text-[11px] font-medium underline btn-press" style={{ color: t.primaryText }}>
             {mostrarPorProfissional ? "ocultar divisão por profissional" : "dividir por profissional (opcional — independe do detalhamento por serviço)"}
           </button>
 
@@ -5669,12 +5648,13 @@ function FormularioFechamento({ mes, nd, servicos, profissionais, registroExiste
                     <label className="flex-1 block">
                       <span className="text-[10px]" style={{ color: t.textMuted }}>Atendimentos</span>
                       <input
-                        type="number" min="0" inputMode="numeric" className={CAMPO + " font-num"}
+                        type="number" min="0" inputMode="numeric" className={`${CAMPO} font-num`}
                         style={{ background: t.surface, border: `1px solid ${t.border}`, color: t.text }}
                         value={divisaoProfissional[p.id]?.atendimentos ?? ""} onChange={(e) => setDivisaoCampo(p.id, "atendimentos", e.target.value)}
                         placeholder="0" aria-label={`Atendimentos de ${p.nome}`}
                       />
                     </label>
+                    {/* biome-ignore lint/a11y/noLabelWithoutControl: CampoMoeda renderiza o input dentro do label */}
                     <label className="flex-1 block">
                       <span className="text-[10px]" style={{ color: t.textMuted }}>Valor total faturado</span>
                       <CampoMoeda value={divisaoProfissional[p.id]?.valorTotal ?? ""} onChange={(v) => setDivisaoCampo(p.id, "valorTotal", v)} />
@@ -5723,14 +5703,14 @@ function FormularioFechamento({ mes, nd, servicos, profissionais, registroExiste
       )}
 
       <div className="flex gap-2">
-        <button
+        <button type="button"
           onClick={salvar} disabled={!valido}
           className="btn-press flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold"
           style={{ background: valido ? t.success : t.surfaceAlt, color: valido ? t.onSuccess : t.textMuted, opacity: valido ? 1 : 0.6 }}
         >
           <Save size={12} /> Salvar fechamento
         </button>
-        <button onClick={() => { descartarRascunho(); onCancelar(); }} className="btn-press rounded-lg px-3 py-2 text-xs font-semibold" style={{ background: t.surfaceAlt, color: t.textMuted }}>
+        <button type="button" onClick={() => { descartarRascunho(); onCancelar(); }} className="btn-press rounded-lg px-3 py-2 text-xs font-semibold" style={{ background: t.surfaceAlt, color: t.textMuted }}>
           Cancelar
         </button>
       </div>
@@ -5783,7 +5763,7 @@ function FechamentoMensal({ nd, servicos, fechamentos, onSalvar, onRemover, onCa
 
   return (
     <div className="rounded-2xl p-4 no-print" style={cardStyle}>
-      <button onClick={() => setAberto((v) => !v)} className="btn-press touch-target flex items-center justify-between w-full" aria-expanded={aberto}>
+      <button type="button" onClick={() => setAberto((v) => !v)} className="btn-press touch-target flex items-center justify-between w-full" aria-expanded={aberto}>
         <span className="text-sm font-semibold inline-flex items-center gap-1.5" style={{ color: t.text }}>
           <CalendarCheck size={14} style={{ color: t.primaryText }} /> Fechamento mensal
         </span>
@@ -5797,7 +5777,7 @@ function FechamentoMensal({ nd, servicos, fechamentos, onSalvar, onRemover, onCa
             gráficos de evolução. Sem ele, não existe "real" pra mostrar, só projeção.
           </p>
 
-          <button onClick={carregarExemploFechamentos} className="text-[11px] font-medium underline btn-press" style={{ color: t.primaryText }}>
+          <button type="button" onClick={carregarExemploFechamentos} className="text-[11px] font-medium underline btn-press" style={{ color: t.primaryText }}>
             carregar 2 meses de exemplo (pra testar o gráfico de evolução)
           </button>
 
@@ -5805,7 +5785,7 @@ function FechamentoMensal({ nd, servicos, fechamentos, onSalvar, onRemover, onCa
             <div className="rounded-xl p-3 flex items-center justify-between gap-2 flex-wrap" style={{ background: t.warningSoft }}>
               <span className="text-xs" style={{ color: t.text }}>{labelMes(chaveAtual)} ainda não foi fechado.</span>
               {editando !== chaveAtual && (
-                <button onClick={() => setEditando(chaveAtual)} className="btn-press shrink-0 rounded-lg px-2.5 py-1.5 text-xs font-semibold" style={{ background: t.warning, color: t.onWarning }}>
+                <button type="button" onClick={() => setEditando(chaveAtual)} className="btn-press shrink-0 rounded-lg px-2.5 py-1.5 text-xs font-semibold" style={{ background: t.warning, color: t.onWarning }}>
                   Fechar agora
                 </button>
               )}
@@ -5817,11 +5797,11 @@ function FechamentoMensal({ nd, servicos, fechamentos, onSalvar, onRemover, onCa
                   {labelMes(chaveAtual)} já fechado — lucro líquido {fmtBRL(fechamentoAtual.lucroLiquidoCalculado)}
                 </span>
                 <div className="flex gap-1.5 shrink-0">
-                  <button onClick={() => setVerDRE((v) => (v === chaveAtual ? null : chaveAtual))} className="btn-press rounded-lg px-2.5 py-1.5 text-xs font-semibold" style={{ background: "transparent", color: t.text, border: `1px solid ${t.text}33` }}>
+                  <button type="button" onClick={() => setVerDRE((v) => (v === chaveAtual ? null : chaveAtual))} className="btn-press rounded-lg px-2.5 py-1.5 text-xs font-semibold" style={{ background: "transparent", color: t.text, border: `1px solid ${t.text}33` }}>
                     {verDRE === chaveAtual ? "ocultar DRE" : "ver DRE"}
                   </button>
                   {editando !== chaveAtual && (
-                    <button onClick={() => setEditando(chaveAtual)} className="btn-press rounded-lg px-2.5 py-1.5 text-xs font-semibold" style={{ background: t.surface, color: t.primaryText, border: `1px solid ${t.border}` }}>
+                    <button type="button" onClick={() => setEditando(chaveAtual)} className="btn-press rounded-lg px-2.5 py-1.5 text-xs font-semibold" style={{ background: t.surface, color: t.primaryText, border: `1px solid ${t.border}` }}>
                       Editar
                     </button>
                   )}
@@ -5864,11 +5844,11 @@ function FechamentoMensal({ nd, servicos, fechamentos, onSalvar, onRemover, onCa
                         {fmtBRL(f.lucroLiquidoCalculado)} · {fmtPct(f.margemLiquidaPctCalculada)}
                       </span>
                       <div className="flex gap-1 shrink-0">
-                        <button onClick={() => setVerDRE((v) => (v === f.mes ? null : f.mes))} className="btn-press touch-target px-1.5 py-0.5 rounded text-[10px] font-semibold" style={{ color: t.primaryText, border: `1px solid ${t.primaryText}44` }}>
+                        <button type="button" onClick={() => setVerDRE((v) => (v === f.mes ? null : f.mes))} className="btn-press touch-target px-1.5 py-0.5 rounded text-[10px] font-semibold" style={{ color: t.primaryText, border: `1px solid ${t.primaryText}44` }}>
                           {verDRE === f.mes ? "ocultar" : "DRE"}
                         </button>
-                        <button onClick={() => setEditando(f.mes)} className="btn-press touch-target p-1" style={{ color: t.primaryText }} aria-label={`Editar fechamento de ${labelMes(f.mes)}`}><Pencil size={12} /></button>
-                        <button onClick={() => remover(f.mes)} className="btn-press touch-target p-1" style={{ color: t.danger }} aria-label={`Excluir fechamento de ${labelMes(f.mes)}`}><Trash2 size={12} /></button>
+                        <button type="button" onClick={() => setEditando(f.mes)} className="btn-press touch-target p-1" style={{ color: t.primaryText }} aria-label={`Editar fechamento de ${labelMes(f.mes)}`}><Pencil size={12} /></button>
+                        <button type="button" onClick={() => remover(f.mes)} className="btn-press touch-target p-1" style={{ color: t.danger }} aria-label={`Excluir fechamento de ${labelMes(f.mes)}`}><Trash2 size={12} /></button>
                       </div>
                     </div>
                     {verDRE === f.mes && (
@@ -6016,7 +5996,7 @@ const BANDAS_SAZONAIS_PADRAO = [
 
 function TooltipEvolucao({ active, payload }) {
   const t = useT();
-  if (!active || !payload || !payload.length) return null;
+  if (!active || !payload?.length) return null;
   const d = payload[0].payload;
   return (
     <div className="rounded-lg p-2.5 text-xs" style={{ background: t.text, color: t.bg, boxShadow: t.shadow }}>
@@ -6266,7 +6246,7 @@ function EvolucaoComparativos({ nd, servicos, fechamentos, sazonalidade, pontoEq
 
   return (
     <div className="rounded-2xl p-4 no-print" style={cardStyle}>
-      <button onClick={() => setAberto((v) => !v)} className="btn-press touch-target flex items-center justify-between w-full" aria-expanded={aberto}>
+      <button type="button" onClick={() => setAberto((v) => !v)} className="btn-press touch-target flex items-center justify-between w-full" aria-expanded={aberto}>
         <span className="text-sm font-semibold inline-flex items-center gap-1.5" style={{ color: t.text }}>
           <TrendingUp size={14} style={{ color: t.primaryText }} /> Evolução e comparativos
         </span>
@@ -6384,7 +6364,7 @@ function ProjecaoCaixa({ dre, sazonalidade, onChange, fechamentos }) {
     <div className="rounded-2xl p-5" style={{ background: t.surface, border: `1px solid ${t.border}`, boxShadow: t.shadow }}>
       <div className="flex items-center justify-between flex-wrap gap-2">
         <p className="text-sm font-semibold" style={{ color: t.text }}>Fluxo de caixa projetado (12 meses)</p>
-        <button onClick={() => setAberto(!aberto)} className="btn-press text-xs font-medium" style={{ color: t.primaryText }}>
+        <button type="button" onClick={() => setAberto(!aberto)} className="btn-press text-xs font-medium" style={{ color: t.primaryText }}>
           {aberto ? "ocultar sazonalidade" : "ajustar sazonalidade"}
         </button>
       </div>
@@ -6395,7 +6375,7 @@ function ProjecaoCaixa({ dre, sazonalidade, onChange, fechamentos }) {
 
       {aberto && (
         <div className="pop-in mb-4">
-          <button onClick={() => setMostrarComoCalcular((v) => !v)} className="text-[11px] font-medium underline btn-press mb-2 block" style={{ color: t.primaryText }}>
+          <button type="button" onClick={() => setMostrarComoCalcular((v) => !v)} className="text-[11px] font-medium underline btn-press mb-2 block" style={{ color: t.primaryText }}>
             {mostrarComoCalcular ? "ocultar como calcular esse percentual" : "como calcular esse percentual"}
           </button>
           {mostrarComoCalcular && (
@@ -6408,7 +6388,7 @@ function ProjecaoCaixa({ dre, sazonalidade, onChange, fechamentos }) {
           )}
 
           {temHistoricoSuficiente ? (
-            <button onClick={calcularAutomatico} className="btn-press w-full rounded-lg px-3 py-2 text-xs font-semibold mb-3 inline-flex items-center justify-center gap-1.5" style={{ background: t.primarySoft, color: t.primaryText }}>
+            <button type="button" onClick={calcularAutomatico} className="btn-press w-full rounded-lg px-3 py-2 text-xs font-semibold mb-3 inline-flex items-center justify-center gap-1.5" style={{ background: t.primarySoft, color: t.primaryText }}>
               <Sparkles size={13} /> Calcular automaticamente a partir do meu histórico real ({totalFechamentos} meses)
             </button>
           ) : (
@@ -6422,7 +6402,7 @@ function ProjecaoCaixa({ dre, sazonalidade, onChange, fechamentos }) {
             {MESES.map((mes, i) => (
               <label key={mes} className="block">
                 <span className="text-[10px]" style={{ color: t.textMuted }}>{mes}</span>
-                <input className={CAMPO + " font-num text-xs py-1"} style={{ background: t.surfaceAlt, border: `1px solid ${t.border}`, color: t.text }}
+                <input className={`${CAMPO} font-num text-xs py-1`} style={{ background: t.surfaceAlt, border: `1px solid ${t.border}`, color: t.text }}
                   type="number" min="0" value={sazonalidade[i]} onChange={(e) => updateMes(i, e.target.value)} />
               </label>
             ))}
@@ -6473,7 +6453,7 @@ const RAIOS_KM = [null, 1, 3, 5];
 
 const pad2 = (n) => String(n).padStart(2, "0");
 const hojeISO = () => { const d = new Date(); return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`; };
-const fmtDataBR = (iso) => (iso ? new Date(iso + "T12:00:00").toLocaleDateString("pt-BR") : "");
+const fmtDataBR = (iso) => (iso ? new Date(`${iso}T12:00:00`).toLocaleDateString("pt-BR") : "");
 
 const fmtKm = (km) => (km < 1 ? `${Math.round(km * 1000)} m` : `${km.toLocaleString("pt-BR", { maximumFractionDigits: 1 })} km`);
 
@@ -6640,6 +6620,7 @@ function FormularioConcorrente({ rascunho, setRascunho, onSalvar, onCancelar, re
       </p>
       {recuperado && <AvisoRascunhoRecuperado />}
       <Campo label="Nome">
+        {/* biome-ignore lint/a11y/noAutofocus: o formulário abre por ação da pessoa (marcar no mapa ou "adicionar"), então o foco vai para o nome */}
         <input className={CAMPO} style={campoStyle} value={rascunho.nome || ""} placeholder="ex.: Barbearia do Zé" autoFocus
           onChange={(e) => setRascunho({ ...rascunho, nome: e.target.value })} />
       </Campo>
@@ -6650,7 +6631,7 @@ function FormularioConcorrente({ rascunho, setRascunho, onSalvar, onCancelar, re
           </select>
         </Campo>
         <Campo label="Bairro (opcional)">
-          <input className={CAMPO + " min-w-0"} style={campoStyle} value={rascunho.bairro || ""}
+          <input className={`${CAMPO} min-w-0`} style={campoStyle} value={rascunho.bairro || ""}
             onChange={(e) => setRascunho({ ...rascunho, bairro: e.target.value })} />
         </Campo>
       </div>
@@ -6708,7 +6689,7 @@ function FormularioPreco({ concorrenteId, servicos, onSalvar, onCancelar }) {
           <CampoMoeda value={valor} onChange={setValor} />
         </Campo>
         <Campo label="Quando você viu">
-          <input type="date" className={CAMPO + " min-w-0"} style={campoStyle} value={data} max={hojeISO()} onChange={(e) => setData(e.target.value)} />
+          <input type="date" className={`${CAMPO} min-w-0`} style={campoStyle} value={data} max={hojeISO()} onChange={(e) => setData(e.target.value)} />
         </Campo>
       </div>
       <Campo label="Onde você viu">
@@ -7132,7 +7113,7 @@ function Observatorio({ servicos, nd, cidadePerfil }) {
           <p className="text-xs">
             <strong style={{ color: t.text }}>Retrato de uma coleta única</strong>, feita
             {COLETA_ESTABELECIMENTOS.data
-              ? ` em ${new Date(COLETA_ESTABELECIMENTOS.data + "T12:00:00").toLocaleDateString("pt-BR")}`
+              ? ` em ${new Date(`${COLETA_ESTABELECIMENTOS.data}T12:00:00`).toLocaleDateString("pt-BR")}`
               : ` até ${COLETA_ESTABELECIMENTOS.limiteComprovado}`}
             {" "}em {COLETA_ESTABELECIMENTOS.fonte}. Tem só nome, bairro e avaliação, sem preço nem endereço exato. Para
             colocar um deles no mapa, toque em "marcar no mapa" e depois no ponto onde ele fica.
@@ -7532,7 +7513,7 @@ function PainelFolha({ tituloId, cabecalho, rodape, onFechar, dispensavel = true
       />
       <div
         ref={dialogoRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby={tituloId}
-        className={(saindo ? "sheet-out" : "sheet-in") + " relative w-full sm:max-w-lg sm:mx-4 rounded-t-2xl sm:rounded-2xl flex flex-col outline-none"}
+        className={`${saindo ? "sheet-out" : "sheet-in"} relative w-full sm:max-w-lg sm:mx-4 rounded-t-2xl sm:rounded-2xl flex flex-col outline-none`}
         style={{ background: t.surface, border: `1px solid ${t.border}`, boxShadow: t.shadow, maxHeight: "86dvh" }}
       >
         <div className="sm:hidden flex justify-center pt-2" aria-hidden="true">
@@ -7706,7 +7687,7 @@ async function apagarTodosOsDados() {
   try {
     const todas = [];
     for (let i = 0; i < window.localStorage.length; i++) todas.push(window.localStorage.key(i));
-    chavesDoApp(todas).forEach((chave) => window.localStorage.removeItem(chave));
+    chavesDoApp(todas).forEach((chave) => { window.localStorage.removeItem(chave); });
   } catch { /* localStorage indisponível: não há o que apagar */ }
 }
 
@@ -7785,7 +7766,7 @@ function FaqItem({ id, pergunta, blocos, aberto, onToggle, destaque }) {
   const t = useT();
   return (
     <div id={id ? `faq-${id}` : undefined} className="fade-up rounded-xl" style={{ background: t.surface, border: `1px solid ${destaque ? t.primary : t.border}`, boxShadow: t.shadow, overflow: "hidden", transition: "border-color .6s ease", scrollMarginTop: 80 }}>
-      <button
+      <button type="button"
         onClick={onToggle} aria-expanded={aberto}
         className="btn-press touch-target flex items-center justify-between w-full text-left px-4 py-3.5 gap-3"
       >
@@ -7859,7 +7840,7 @@ function Faq({ alvo, aceite, onAbrirDocumento } = {}) {
 
       <div className="flex gap-1 p-1 rounded-lg w-fit overflow-x-auto" style={{ background: t.surfaceAlt, maxWidth: "100%" }}>
         {categorias.map((c) => (
-          <button
+          <button type="button"
             key={c} onClick={() => setCategoriaAtiva(c)}
             className="btn-press rounded-md px-2.5 py-1.5 text-xs font-medium whitespace-nowrap"
             style={{ background: categoriaAtiva === c ? t.surface : "transparent", color: categoriaAtiva === c ? t.text : t.textMuted, boxShadow: categoriaAtiva === c ? t.shadow : "none" }}
@@ -8008,11 +7989,11 @@ function FormularioProdutoRevenda({ produtoExistente, onSalvar, onCancelar }) {
         </p>
       )}
       <div className="flex gap-2">
-        <button onClick={salvar} disabled={!valido} className="btn-press flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold"
+        <button type="button" onClick={salvar} disabled={!valido} className="btn-press flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold"
           style={{ background: valido ? t.success : t.surface, color: valido ? t.onSuccess : t.textMuted, opacity: valido ? 1 : 0.6 }}>
           <Save size={12} /> Salvar produto
         </button>
-        <button onClick={() => { descartar(); onCancelar(); }} className="btn-press rounded-lg px-3 py-2 text-xs font-semibold" style={{ background: t.surface, color: t.textMuted }}>
+        <button type="button" onClick={() => { descartar(); onCancelar(); }} className="btn-press rounded-lg px-3 py-2 text-xs font-semibold" style={{ background: t.surface, color: t.textMuted }}>
           Cancelar
         </button>
       </div>
@@ -8052,11 +8033,11 @@ function FormularioMovimento({ produto, onSalvar, onCancelar }) {
       <p className="text-xs font-semibold" style={{ color: t.text }}>Movimentar: {produto.nome}</p>
       {recuperado && <AvisoRascunhoRecuperado />}
       <div className="flex gap-1 p-1 rounded-lg w-fit" style={{ background: t.surface }}>
-        <button onClick={() => setTipoMov("entrada")} className="btn-press rounded-md px-3 py-1.5 text-xs font-semibold"
+        <button type="button" onClick={() => setTipoMov("entrada")} className="btn-press rounded-md px-3 py-1.5 text-xs font-semibold"
           style={{ background: tipo === "entrada" ? t.successSoft : "transparent", color: tipo === "entrada" ? t.successText : t.textMuted }}>
           Entrada
         </button>
-        <button onClick={() => setTipoMov("saida")} className="btn-press rounded-md px-3 py-1.5 text-xs font-semibold"
+        <button type="button" onClick={() => setTipoMov("saida")} className="btn-press rounded-md px-3 py-1.5 text-xs font-semibold"
           style={{ background: tipo === "saida" ? t.dangerSoft : "transparent", color: tipo === "saida" ? t.danger : t.textMuted }}>
           Saída
         </button>
@@ -8082,11 +8063,11 @@ function FormularioMovimento({ produto, onSalvar, onCancelar }) {
         </p>
       )}
       <div className="flex gap-2">
-        <button onClick={salvar} disabled={!valido} className="btn-press flex-1 rounded-lg px-3 py-2 text-xs font-semibold"
+        <button type="button" onClick={salvar} disabled={!valido} className="btn-press flex-1 rounded-lg px-3 py-2 text-xs font-semibold"
           style={{ background: valido ? t.success : t.surface, color: valido ? t.onSuccess : t.textMuted, opacity: valido ? 1 : 0.6 }}>
           Confirmar {tipo === "entrada" ? "entrada" : "saída"}
         </button>
-        <button onClick={() => { descartar(); onCancelar(); }} className="btn-press rounded-lg px-3 py-2 text-xs font-semibold" style={{ background: t.surface, color: t.textMuted }}>
+        <button type="button" onClick={() => { descartar(); onCancelar(); }} className="btn-press rounded-lg px-3 py-2 text-xs font-semibold" style={{ background: t.surface, color: t.textMuted }}>
           Cancelar
         </button>
       </div>
@@ -8128,16 +8109,16 @@ function CardProdutoRevenda({ produto, onEditar, onExcluir, onMovimentar, movime
           </div>
         </div>
         <div className="flex gap-2 mt-3 items-center">
-          <button onClick={() => setMovimentando((v) => !v)} className="btn-press flex-1 rounded-lg px-2.5 py-1.5 text-xs font-semibold" style={{ background: t.primarySoft, color: t.primaryText }}>
+          <button type="button" onClick={() => setMovimentando((v) => !v)} className="btn-press flex-1 rounded-lg px-2.5 py-1.5 text-xs font-semibold" style={{ background: t.primarySoft, color: t.primaryText }}>
             Movimentar
           </button>
-          <button onClick={onEditar} className="btn-press touch-target-48 p-1.5 rounded-lg" style={{ color: t.primaryText }} aria-label={`Editar ${produto.nome}`}><Pencil size={14} /></button>
+          <button type="button" onClick={onEditar} className="btn-press touch-target-48 p-1.5 rounded-lg" style={{ color: t.primaryText }} aria-label={`Editar ${produto.nome}`}><Pencil size={14} /></button>
           {!confirmando ? (
-            <button onClick={() => setConfirmando(true)} className="btn-press touch-target-48 p-1.5 rounded-lg" style={{ color: t.danger }} aria-label={`Excluir ${produto.nome}`}><Trash2 size={14} /></button>
+            <button type="button" onClick={() => setConfirmando(true)} className="btn-press touch-target-48 p-1.5 rounded-lg" style={{ color: t.danger }} aria-label={`Excluir ${produto.nome}`}><Trash2 size={14} /></button>
           ) : (
             <div className="flex items-center gap-1.5 text-[10px] shrink-0">
-              <button onClick={() => { onExcluir(); setConfirmando(false); }} className="btn-press font-semibold underline" style={{ color: t.danger }}>confirmar</button>
-              <button onClick={() => setConfirmando(false)} className="btn-press underline" style={{ color: t.textMuted }}>não</button>
+              <button type="button" onClick={() => { onExcluir(); setConfirmando(false); }} className="btn-press font-semibold underline" style={{ color: t.danger }}>confirmar</button>
+              <button type="button" onClick={() => setConfirmando(false)} className="btn-press underline" style={{ color: t.textMuted }}>não</button>
             </div>
           )}
         </div>
@@ -8165,7 +8146,7 @@ function EstoqueInsumosInternos({ negocio, onSalvarNegocio }) {
 
   return (
     <div className="rounded-2xl p-4 no-print" style={{ background: t.surface, border: `1px solid ${t.border}`, boxShadow: t.shadow }}>
-      <button onClick={() => setAberto((v) => !v)} className="btn-press touch-target flex items-center justify-between w-full" aria-expanded={aberto}>
+      <button type="button" onClick={() => setAberto((v) => !v)} className="btn-press touch-target flex items-center justify-between w-full" aria-expanded={aberto}>
         <span className="text-sm font-semibold inline-flex items-center gap-1.5" style={{ color: t.text }}>
           <Package size={14} style={{ color: t.primaryText }} /> Insumos de uso interno
         </span>
@@ -8219,16 +8200,16 @@ function EstoqueInsumosInternos({ negocio, onSalvarNegocio }) {
                     <div className="grid grid-cols-3 gap-2">
                       <div>
                         <span className="text-[10px]" style={{ color: t.textMuted }}>Comprada</span>
-                        <div className={CAMPO + " font-num"} style={{ background: t.surface, border: `1px dashed ${t.border}`, color: t.textMuted }}>{comprada}</div>
+                        <div className={`${CAMPO} font-num`} style={{ background: t.surface, border: `1px dashed ${t.border}`, color: t.textMuted }}>{comprada}</div>
                       </div>
                       <label className="block">
                         <span className="text-[10px]" style={{ color: t.textMuted }}>Usada</span>
-                        <input type="number" min="0" className={CAMPO + " font-num"} style={{ background: t.surface, border: `1px solid ${t.border}`, color: t.text }}
+                        <input type="number" min="0" className={`${CAMPO} font-num`} style={{ background: t.surface, border: `1px solid ${t.border}`, color: t.text }}
                           value={i.quantidadeUsada ?? ""} onChange={(e) => updateInsumo(i.id, "quantidadeUsada", e.target.value === "" ? null : N(e.target.value))} placeholder="0" />
                       </label>
                       <label className="block">
                         <span className="text-[10px]" style={{ color: t.textMuted }}>Mínimo</span>
-                        <input type="number" min="0" className={CAMPO + " font-num"} style={{ background: t.surface, border: `1px solid ${t.border}`, color: t.text }}
+                        <input type="number" min="0" className={`${CAMPO} font-num`} style={{ background: t.surface, border: `1px solid ${t.border}`, color: t.text }}
                           value={i.estoqueMinimo ?? ""} onChange={(e) => updateInsumo(i.id, "estoqueMinimo", e.target.value === "" ? null : N(e.target.value))} placeholder="não controla" />
                       </label>
                     </div>
@@ -8350,7 +8331,7 @@ function Estoque({ negocio, onSalvarNegocio }) {
         <div className="flex items-center justify-between mb-3">
           <p className="text-sm font-semibold" style={{ color: t.text }}>Produtos para revenda</p>
           {!criandoProduto && (
-            <button onClick={() => setCriandoProduto(true)} className="btn-press inline-flex items-center gap-1 text-xs font-medium rounded-lg px-2.5 py-1.5" style={{ color: t.primaryText, background: t.primarySoft }}>
+            <button type="button" onClick={() => setCriandoProduto(true)} className="btn-press inline-flex items-center gap-1 text-xs font-medium rounded-lg px-2.5 py-1.5" style={{ color: t.primaryText, background: t.primarySoft }}>
               <Plus size={13} /> novo produto
             </button>
           )}

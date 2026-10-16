@@ -1,3 +1,4 @@
+/* biome-ignore-all lint/suspicious/noUnknownAtRules: diretivas do Tailwind 3 (@tailwind) */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
