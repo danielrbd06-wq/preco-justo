@@ -5,9 +5,10 @@
 /*                                                                         */
 /* VERSÃO PRELIMINAR, em revisão jurídica. Ao mudar qualquer texto que o    */
 /* usuário aceita, suba VERSAO_TERMOS: o app pede o aceite de novo.         */
+/* v0.2 (Bloco 14): Google Fonts saiu da lista de serviços de terceiros.    */
 /* ======================================================================= */
 
-export const VERSAO_TERMOS = "0.1";
+export const VERSAO_TERMOS = "0.2";
 export const DATA_TERMOS = "16 de outubro de 2026";
 
 // Registro do aceite: fica direto no localStorage, FORA do espaço de dados do
@@ -116,10 +117,9 @@ export const AVISO_PRIVACIDADE = [
     "O responsável pelo app não tem acesso a nenhuma dessas informações.",
   ] },
   { titulo: "3. Serviços de terceiros", paragrafos: [
-    "Para o app funcionar, o seu navegador se conecta a três serviços. Eles recebem dados técnicos de acesso, como endereço IP, tipo de navegador, data e hora, e seguem as próprias políticas de privacidade. Nenhum deles recebe os dados do seu negócio.",
+    "Para o app funcionar, o seu navegador se conecta a dois serviços. Eles recebem dados técnicos de acesso, como endereço IP, tipo de navegador, data e hora, e seguem as próprias políticas de privacidade. Nenhum deles recebe os dados do seu negócio.",
   ], itens: [
     "Vercel (EUA): hospeda e entrega o app, ao abrir ou atualizar;",
-    "Google Fonts (EUA): entrega a fonte das letras, ao abrir o app;",
     "OpenStreetMap (Reino Unido): entrega as imagens do mapa, só ao abrir o mapa do Observatório.",
   ], depois: [
     "Como esses serviços ficam fora do Brasil, o acesso envolve transferência internacional desses dados técnicos.",

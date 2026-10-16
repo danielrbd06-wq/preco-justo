@@ -52,7 +52,7 @@ Antes de finalizar, revise a interface como **designer de produto sênior** e co
 
 ## 4. Arquitetura atual
 
-- **React 18 + Vite 5 + Tailwind CSS 3**, gráficos com **Recharts**, ícones **lucide-react**, exportação Excel com **xlsx**, mapa com **Leaflet** 1.9.4 sobre o **OpenStreetMap**.
+- **React 18 + Vite 5 + Tailwind CSS 3**, fonte **Poppins** local (`@fontsource/poppins`), gráficos com **Recharts**, ícones **lucide-react**, exportação Excel com **xlsx**, mapa com **Leaflet** 1.9.4 sobre o **OpenStreetMap**.
 - PWA via **vite-plugin-pwa** (instalável, funciona offline).
 - Telas e componentes em `src/App.jsx` (~7.800 linhas), com componentes reutilizáveis definidos no próprio arquivo.
 - **Contas em `src/calculos.js`** (funções puras, sem React): leitura de valores, Simples Nacional, motores de preço (Modo A e B), custos variáveis, comissão e taxa médias, DRE, pontos de equilíbrio, pacote e comparação com a concorrência. Testadas em `src/calculos.test.js`.
@@ -80,6 +80,7 @@ As melhorias foram organizadas em **blocos** (os 7 da análise inicial e os segu
 | 11 | Lei do Salão-Parceiro: tipo "Profissional-parceiro" (cota-parte, CNPJ, contrato homologado), imposto e taxa da maquininha só sobre a parte do salão, DRE com valor cobrado − cota-parte, fechamento mensal e FAQ | ✅ Implementado (`docs/bloco-11-issue-e-pr.md`) |
 | 12 | Termos de Uso e Aviso de Privacidade preliminares (v0.1): tela de aceite, leitura dos textos no app, FAQ → Privacidade e termos, "Apagar todos os dados deste aparelho" | ✅ Implementado (`docs/bloco-12-issue-e-pr.md`) |
 | 13 | Lembrete de cópia de segurança depois de salvar o fechamento do mês; rascunho automático no Observatório (concorrente e preço) e no Estoque (produto e movimentação) | ✅ Implementado (`docs/bloco-13-issues-e-pr.md`) |
+| 14 | Fonte Poppins dentro do app (`@fontsource/poppins`, sem Google Fonts, no cache offline); Aviso de Privacidade v0.2 com dois terceiros e teste que barra endereço externo não declarado | ✅ Implementado (`docs/bloco-14-issue-e-pr.md`) |
 
 ### Esteira de qualidade (Bloco 8) — vale para toda mudança
 - **Toda conta nova ou alterada vai para `src/calculos.js`, com teste em `src/calculos.test.js`.** Os valores esperados devem ser conferidos à mão e explicados no teste. A cobertura mínima de `calculos.js` é de 85% das linhas e 80% das funções; abaixo disso, a verificação falha.
@@ -153,7 +154,7 @@ As melhorias foram organizadas em **blocos** (os 7 da análise inicial e os segu
 - **Ao mudar qualquer texto que o usuário aceita, suba `VERSAO_TERMOS`**: o app mostra a tela de aceite de novo ("Os termos foram atualizados"). Exceção: correções que não mudam direitos nem obrigações (como dados de contato) não sobem a versão.
 - O aceite (`{ versao, aceitoEm }`) fica em `localStorage["preco-justo:aceite-termos"]`, **fora** do prefixo de dados do app: não vai para a cópia de segurança e restaurar uma cópia não apaga o aceite.
 - "Apagar todos os dados deste aparelho" (FAQ → Privacidade e termos) remove todas as chaves `preco-justo:` (`chavesDoApp`), inclusive o aceite, e recarrega. Oferece baixar a cópia antes (`baixarCopiaSeguranca`, a mesma função de Negócio → Cópia de segurança).
-- O Aviso de Privacidade descreve o que o app faz hoje: nada sai do aparelho; Vercel, Google Fonts e OpenStreetMap recebem só dados técnicos de acesso. **Se uma mudança passar a enviar dados a algum servidor ou adicionar outro serviço externo, o aviso precisa ser atualizado antes (e a versão sobe).**
+- O Aviso de Privacidade descreve o que o app faz hoje: nada sai do aparelho; só Vercel e OpenStreetMap recebem dados técnicos de acesso (v0.2: a fonte Poppins fica dentro do app, via `@fontsource/poppins` importado em `src/main.jsx`). **Se uma mudança passar a enviar dados a algum servidor ou adicionar outro serviço externo, o aviso precisa ser atualizado antes (e a versão sobe).** O teste "o código só acessa os serviços declarados" em `termos.test.js` falha se aparecer um endereço `https://` novo no código: não adicione o endereço à lista do teste sem atualizar o aviso.
 - O consentimento da futura média de preços já tem texto no documento, mas só entra no app junto com o recurso, depois da revisão jurídica.
 
 ### Formatação e leitura de números (padrão brasileiro)
@@ -165,5 +166,4 @@ As melhorias foram organizadas em **blocos** (os 7 da análise inicial e os segu
 - **[Dado]** A data exata da coleta dos estabelecimentos do Observatório não foi registrada. A tela mostra "até agosto de 2026" (limite comprovado pelo build de 16/08/2026). Ao refazer a coleta, preencher `COLETA_ESTABELECIMENTOS.data` em `src/App.jsx`.
 - **[Qualidade — próximo passo]** Lint e formatação automáticos (Biome) e cobertura de ramos (hoje 66%) ficaram de fora do Bloco 8 para não misturar milhares de mudanças de formatação com a esteira. Entram em um PR próprio.
 - **[Jurídico]** Revisão dos termos e do aviso de privacidade (v0.1 preliminar já no app). Pontos em aberto no documento: responsável (pessoa física ou CNPJ), limite de responsabilidade e foro (CDC), regras de cobrança, registros de acesso (Marco Civil, art. 15), transferência internacional, anonimização e concorrência na média de preços.
-- **[Melhoria — opcional]** Guardar a fonte Poppins dentro do app (hoje vem do Google Fonts) tira o Google da lista de terceiros do Aviso de Privacidade e deixa a fonte funcionando offline.
 - **[Segurança]** A biblioteca `xlsx` 0.18.5 tem alertas conhecidos (prototype pollution e ReDoS) que afetam a **leitura** de planilhas. O app hoje só **gera** planilhas (não lê arquivos do usuário), então o risco prático é baixo — reavaliar se um dia o app passar a importar `.xlsx`.

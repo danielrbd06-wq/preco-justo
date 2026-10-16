@@ -55,3 +55,25 @@ describe("textos legais", () => {
     }
   });
 });
+
+describe("serviços externos", () => {
+  // O Aviso de Privacidade lista quem recebe dados técnicos de acesso. Se o código
+  // passar a chamar outro endereço, este teste falha: atualize o aviso (e a versão).
+  const DECLARADOS = new Set([
+    "tile.openstreetmap.org", // imagens do mapa (Aviso, item 3)
+    "www.openstreetmap.org", // só link de atribuição, aberto se a pessoa clicar
+    "www.w3.org", // namespace de SVG, não é acessado
+  ]);
+  it("o código só acessa os serviços declarados no Aviso de Privacidade", async () => {
+    const { readdirSync, readFileSync } = await import("node:fs");
+    const arquivos = [
+      ...readdirSync("src").filter((f) => /\.(jsx?|css)$/.test(f) && !f.includes(".test.")).map((f) => `src/${f}`),
+      "index.html",
+    ];
+    const hosts = new Set();
+    for (const arq of arquivos) {
+      for (const m of readFileSync(arq, "utf8").matchAll(/https?:\/\/([a-z0-9.-]+)/gi)) hosts.add(m[1].toLowerCase());
+    }
+    expect([...hosts].filter((h) => !DECLARADOS.has(h))).toEqual([]);
+  });
+});
