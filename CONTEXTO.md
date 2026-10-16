@@ -54,7 +54,7 @@ Antes de finalizar, revise a interface como **designer de produto sênior** e co
 
 - **React 18 + Vite 5 + Tailwind CSS 3**, gráficos com **Recharts**, ícones **lucide-react**, exportação Excel com **xlsx**, mapa com **Leaflet** 1.9.4 sobre o **OpenStreetMap**.
 - PWA via **vite-plugin-pwa** (instalável, funciona offline).
-- Telas e componentes em `src/App.jsx` (~7.500 linhas), com componentes reutilizáveis definidos no próprio arquivo.
+- Telas e componentes em `src/App.jsx` (~7.800 linhas), com componentes reutilizáveis definidos no próprio arquivo.
 - **Contas em `src/calculos.js`** (funções puras, sem React): leitura de valores, Simples Nacional, motores de preço (Modo A e B), custos variáveis, comissão e taxa médias, DRE, pontos de equilíbrio, pacote e comparação com a concorrência. Testadas em `src/calculos.test.js`.
 - `src/MapaConcorrencia.jsx`: mapa do Observatório, carregado sob demanda (`React.lazy`) para o Leaflet não pesar no resto do app.
 - Persistência: `window.storage` com fallback para `localStorage` (`listarComFallback()`), tudo no dispositivo do usuário.
@@ -78,6 +78,7 @@ As melhorias foram organizadas em **blocos** (os 7 da análise inicial e os segu
 | 9 | Não perder trabalho: o que foi digitado sobrevive à troca de aba, ao recarregar e à atualização (auto-salvar descarrega pendências; rascunhos do serviço novo e do fechamento); aviso "Nova versão disponível"; cópia de segurança (baixar e restaurar) | ✅ Implementado (`docs/bloco-9-issues-e-pr.md`) |
 | 10 | Excel do Observatório: botão "Baixar planilha (Excel)" no Observatório (Sobre, Concorrentes, Preços anotados, Comparação de preços) e as mesmas abas no relatório completo do Painel | ✅ Implementado (`docs/bloco-10-issue-e-pr.md`) |
 | 11 | Lei do Salão-Parceiro: tipo "Profissional-parceiro" (cota-parte, CNPJ, contrato homologado), imposto e taxa da maquininha só sobre a parte do salão, DRE com valor cobrado − cota-parte, fechamento mensal e FAQ | ✅ Implementado (`docs/bloco-11-issue-e-pr.md`) |
+| 12 | Termos de Uso e Aviso de Privacidade preliminares (v0.1): tela de aceite, leitura dos textos no app, FAQ → Privacidade e termos, "Apagar todos os dados deste aparelho" | ✅ Implementado (`docs/bloco-12-issue-e-pr.md`) |
 
 ### Esteira de qualidade (Bloco 8) — vale para toda mudança
 - **Toda conta nova ou alterada vai para `src/calculos.js`, com teste em `src/calculos.test.js`.** Os valores esperados devem ser conferidos à mão e explicados no teste. A cobertura mínima de `calculos.js` é de 85% das linhas e 80% das funções; abaixo disso, a verificação falha.
@@ -107,6 +108,7 @@ As melhorias foram organizadas em **blocos** (os 7 da análise inicial e os segu
 - **`PainelExplicacao`** — mostra a resposta completa do FAQ por cima da tela (bottom sheet no celular, diálogo centralizado no computador). **Não troque de aba para explicar algo:** trocar de aba descarta o que ainda não foi salvo (rascunho de serviço novo e os últimos segundos digitados no Negócio).
 - **`Selo`** — selos de origem do dado: `real`, `calculado`, `aguardando`, `legal`. Todo número exibido deve deixar claro se é dado real, projeção ou exemplo.
 - **`CaixaSemaforo`** — caixa 🔴🟡🟢⚪ com título curto e frase com número concreto e próximo passo. Usada no diagnóstico de cada serviço, no enquadramento do Simples (`DiagnosticoSimples`) e na escada de pontos de equilíbrio (`EscadaPontoEquilibrio`). Use-a para qualquer novo diagnóstico em linguagem natural.
+- **`PainelFolha`** — a folha base (sobe de baixo no celular, diálogo no computador) com entrada e saída simétricas, foco e Esc. `PainelExplicacao`, `PainelDocumentoLegal` e `TelaAceite` são feitos com ela. **Qualquer novo painel por cima da tela deve usá-la.** `dispensavel={false}` tira o X, o Esc e o clique fora.
 - **`useBalaoAncorado`** — posicionamento compartilhado dos balões `Ajuda` e `InfoConceito` (portal, posição fixa, acompanha a rolagem). Qualquer novo balão deve usá-lo.
 
 ### Profissionais, comissão e aluguel de cadeira (Bloco 4)
@@ -143,6 +145,14 @@ As melhorias foram organizadas em **blocos** (os 7 da análise inicial e os segu
 - DRE (`montarDRE`, `montarDREMensal`): `valorCobrado` − `cotaParteParceiros` = `receitaBruta` do salão; a cota sai dos custos variáveis para não ser descontada duas vezes. Sem parceiros, tudo fica igual. Fechamentos guardam `cotaParteSnapshot`; os antigos não têm o campo (vale 0).
 - Pontos de equilíbrio e margem de segurança passam a ser sobre a receita do salão (já sem a cota).
 
+### Termos de Uso e Aviso de Privacidade (Bloco 12)
+- Textos e regras em `src/termos.js` (testados em `termos.test.js`). Texto-base: documento "Preço Justo — Termos de Uso e Aviso de Privacidade (rascunho)", v0.1 de 16/10/2026. **Versão preliminar, em revisão jurídica**: nenhuma marcação de rascunho ("[a definir]") pode aparecer para o usuário (há teste para isso).
+- **Ao mudar qualquer texto que o usuário aceita, suba `VERSAO_TERMOS`**: o app mostra a tela de aceite de novo ("Os termos foram atualizados").
+- O aceite (`{ versao, aceitoEm }`) fica em `localStorage["preco-justo:aceite-termos"]`, **fora** do prefixo de dados do app: não vai para a cópia de segurança e restaurar uma cópia não apaga o aceite.
+- "Apagar todos os dados deste aparelho" (FAQ → Privacidade e termos) remove todas as chaves `preco-justo:` (`chavesDoApp`), inclusive o aceite, e recarrega. Oferece baixar a cópia antes (`baixarCopiaSeguranca`, a mesma função de Negócio → Cópia de segurança).
+- O Aviso de Privacidade descreve o que o app faz hoje: nada sai do aparelho; Vercel, Google Fonts e OpenStreetMap recebem só dados técnicos de acesso. **Se uma mudança passar a enviar dados a algum servidor ou adicionar outro serviço externo, o aviso precisa ser atualizado antes (e a versão sobe).**
+- O consentimento da futura média de preços já tem texto no documento, mas só entra no app junto com o recurso, depois da revisão jurídica.
+
 ### Formatação e leitura de números (padrão brasileiro)
 - Exibição: `fmtBRL` (R$ 2.500,00) e `fmtPct` (6,00%), sempre com vírgula decimal.
 - Entrada: **todo campo em que o usuário digita valor deve passar por `normalizarValorBR`**. Ele entende "2.500", "2.500,00", "1.234.567" e "2500,50". Ler direto com `Number()` ou trocar só a vírgula por ponto grava "2.500" como R$ 2,50.
@@ -151,5 +161,6 @@ As melhorias foram organizadas em **blocos** (os 7 da análise inicial e os segu
 - **[Nova função — futuro]** Média anônima de preços entre usuários do app, por bairro. Exige servidor, consentimento, termos de uso e política de privacidade aprovados pelo jurídico (LGPD) e um número mínimo de negócios por grupo para não identificar ninguém. Adiada por decisão do Daniel no Bloco 6.
 - **[Dado]** A data exata da coleta dos estabelecimentos do Observatório não foi registrada. A tela mostra "até agosto de 2026" (limite comprovado pelo build de 16/08/2026). Ao refazer a coleta, preencher `COLETA_ESTABELECIMENTOS.data` em `src/App.jsx`.
 - **[Qualidade — próximo passo]** Lint e formatação automáticos (Biome) e cobertura de ramos (hoje 66%) ficaram de fora do Bloco 8 para não misturar milhares de mudanças de formatação com a esteira. Entram em um PR próprio.
-- **[Documento]** Rascunho dos termos de uso e da política de privacidade, para revisão jurídica antes de entrar no app.
+- **[Jurídico]** Revisão dos termos e do aviso de privacidade (v0.1 preliminar já no app). Pontos em aberto no documento: responsável (pessoa física ou CNPJ), canal de contato (`CONTATO_PRIVACIDADE` em `src/termos.js`), limite de responsabilidade e foro (CDC), regras de cobrança, registros de acesso (Marco Civil, art. 15), transferência internacional, anonimização e concorrência na média de preços.
+- **[Melhoria — opcional]** Guardar a fonte Poppins dentro do app (hoje vem do Google Fonts) tira o Google da lista de terceiros do Aviso de Privacidade e deixa a fonte funcionando offline.
 - **[Segurança]** A biblioteca `xlsx` 0.18.5 tem alertas conhecidos (prototype pollution e ReDoS) que afetam a **leitura** de planilhas. O app hoje só **gera** planilhas (não lê arquivos do usuário), então o risco prático é baixo — reavaliar se um dia o app passar a importar `.xlsx`.
