@@ -16,9 +16,12 @@ import {
   calcularReverso,
   calcularServico,
   calcularTaxaRecebimento,
+  calcularUnificado,
   calcularValorItemVariavel,
   comissaoEfetiva,
   computeNegocioDerivado,
+  converterParaDias,
+  custoMensalInsumoCompartilhado,
   diasDesde,
   distanciaKm,
   fmtPct,
@@ -32,8 +35,10 @@ import {
   parcelaParceiro,
   pisoDoServico,
   posicaoNaConcorrencia,
+  precoUnitarioItem,
   taxaEfetiva,
   ultimoPrecoPorConcorrente,
+  vinculoDe,
 } from "./calculos.js";
 
 /* Mesmo cenário do "Carregar exemplo": salão de 2 profissionais no Simples. */
@@ -505,5 +510,192 @@ describe("Lei do Salão-Parceiro (Bloco 11)", () => {
     });
     expect(d.receitaBruta).toBe(600);
     expect(d.resultadoOperacional).toBe(600 - 36 - 50 - 300);
+  });
+});
+
+/* Bloco 15: casos-limite. Garantem que dado faltando ou zerado nunca vira    */
+/* divisão por zero, número inventado ou tela quebrada, e cobrem os caminhos   */
+/* que o exemplo não usa (insumo compartilhado, "já tenho preço", pacote).     */
+describe("casos-limite (Bloco 15)", () => {
+  const nd = computeNegocioDerivado(negocioExemplo());
+  const [corte] = servicosExemplo();
+  const jaTenho = { ...corte, modo: "ja-tenho", precoCobrado: 30, margemPct: 25 };
+
+  it("valores inválidos viram zero", () => {
+    expect(fmtPct(Number.NaN)).toBe("0,0%");
+    expect(fmtPct(Number.POSITIVE_INFINITY, 2)).toBe("0,00%");
+    expect(N(normalizarValorBR(null))).toBe(0);
+    expect(N(normalizarValorBR(undefined))).toBe(0);
+    expect(N(normalizarValorBR("abc"))).toBe(0);
+  });
+
+  it("Simples sem faturamento: primeira faixa, sem parcela a deduzir", () => {
+    expect(aliquotaEfetiva(0, ANEXO_III)).toEqual({ faixaIdx: 0, aliqNominal: ANEXO_III[0].aliq, pd: 0, aliqEfetiva: ANEXO_III[0].aliq });
+  });
+
+  it("profissional sem tipo conta como comissionado", () => {
+    expect(vinculoDe(undefined)).toBe("comissao");
+    expect(vinculoDe({})).toBe("comissao");
+  });
+
+  it("comissão média só existe com 2 pessoas ativas e ao menos um comissionado", () => {
+    expect(calcularComissaoEquipe(null)).toBeNull();
+    expect(
+      calcularComissaoEquipe([
+        { nome: "", comissaoPct: 30 },
+        { nome: "Ana", comissaoPct: 30 },
+      ]),
+    ).toBeNull();
+    expect(
+      calcularComissaoEquipe([
+        { nome: "A", vinculo: "dono" },
+        { nome: "B", vinculo: "dono" },
+      ]),
+    ).toBeNull();
+    // Inativo fica de fora; sem atendimentos, média simples: (30 + 20) ÷ 2 = 25
+    const r = calcularComissaoEquipe([
+      { nome: "A", comissaoPct: 40, ativo: false },
+      { nome: "B", comissaoPct: 30 },
+      { nome: "C", comissaoPct: 20 },
+    ]);
+    expect(r.pct).toBe(25);
+    expect(r.ponderada).toBe(false);
+  });
+
+  it("duração em semanas e meses vira dias", () => {
+    expect(converterParaDias(2, "semanas")).toBe(14);
+    expect(converterParaDias(1, "meses")).toBe(30);
+    expect(converterParaDias(5, "dias")).toBe(5);
+    expect(converterParaDias("", "dias")).toBe(0);
+    expect(precoUnitarioItem({ valorCompra: 40, quantidadeComprada: 0 })).toBe(0);
+  });
+
+  it("insumo compartilhado por unidade: R$ 40 ÷ 100 × 2 por atendimento = R$ 0,80", () => {
+    const insumos = [{ id: "t", modo: "unidade", valorCompra: 40, quantidadeComprada: 100 }];
+    const item = { modo: "compartilhado", insumoId: "t", usoPorAtendimento: 2 };
+    expect(calcularValorItemVariavel(item, { atendimentosMes: 40, diasMesNegocio: 26, insumosCompartilhados: insumos })).toBeCloseTo(
+      0.8,
+      10,
+    );
+  });
+
+  it("insumo compartilhado por duração: R$ 80 em 45 dias, 26 dias/mês, 50% para 40 atendimentos", () => {
+    const insumo = { id: "g", modo: "duracao", valorCompra: 80, duracaoValor: 45, duracaoUnidade: "dias" };
+    // 80 × 26 ÷ 45 = 46,22 por mês; metade = 23,11; ÷ 40 atendimentos = 0,5778
+    expect(custoMensalInsumoCompartilhado(insumo, 26)).toBeCloseTo(46.2222, 4);
+    const item = { modo: "compartilhado", insumoId: "g", percentualAlocado: 50 };
+    const ctx = { atendimentosMes: 40, diasMesNegocio: 26, insumosCompartilhados: [insumo] };
+    expect(calcularValorItemVariavel(item, ctx)).toBeCloseTo(0.5778, 4);
+    expect(calcularValorItemVariavel(item, { ...ctx, atendimentosMes: 0 })).toBe(0);
+    expect(custoMensalInsumoCompartilhado(insumo, 0)).toBe(0);
+    expect(calcularValorItemVariavel({ ...item, insumoId: "nao-existe" }, ctx)).toBe(0);
+  });
+
+  it("custo por duração sem atendimentos não divide por zero; custo direto é o valor digitado", () => {
+    const ctx = { atendimentosMes: 0, diasMesNegocio: 26, insumosCompartilhados: [] };
+    expect(calcularValorItemVariavel({ modo: "duracao", valorCompra: 80, duracaoValor: 45, duracaoUnidade: "dias" }, ctx)).toBe(0);
+    expect(calcularValorItemVariavel({ modo: "direto", valor: "3" }, ctx)).toBe(3);
+  });
+
+  it("os motores dizem o que falta em vez de inventar um preço", () => {
+    expect(calcularServico(corte, null).status).toBe("sem-negocio");
+    expect(calcularServico({ ...corte, atendimentosMes: 0 }, nd).status).toBe("sem-volume");
+    expect(calcularServico({ ...corte, custosVariaveis: [], horasPorAtendimento: 0 }, nd).status).toBe("sem-custo");
+    expect(calcularReverso({ ...corte, precoCobrado: 30 }, null).status).toBe("sem-negocio");
+    expect(calcularReverso({ ...corte, precoCobrado: 0, margemMetaPct: 25 }, nd).status).toBe("sem-preco");
+    expect(calcularReverso({ ...corte, horasPorAtendimento: 0, precoCobrado: 30, margemMetaPct: 25 }, nd).lucroPorHora).toBeNull();
+  });
+
+  it("diagnóstico do preço cobrado: saudável, apertado ou prejuízo", () => {
+    const precoA = calcularServico(corte, nd).preco; // margem de 25%
+    expect(calcularReverso({ ...corte, precoCobrado: precoA, margemMetaPct: 20 }, nd).diagnostico).toBe("saudavel");
+    expect(calcularReverso({ ...corte, precoCobrado: precoA, margemMetaPct: 40 }, nd).diagnostico).toBe("apertado");
+    expect(calcularReverso({ ...corte, precoCobrado: 5, margemMetaPct: 25 }, nd).diagnostico).toBe("prejuizo");
+    // Percentuais somando 100% ou mais: não existe preço mínimo nem ideal.
+    const r = calcularReverso({ ...corte, comissaoPct: 99, precoCobrado: 30, margemMetaPct: 25 }, nd);
+    expect(r.precoMinimo).toBeNull();
+    expect(r.precoIdeal).toBeNull();
+  });
+
+  it("serviço com preço já definido usa o Modo B em todas as telas", () => {
+    const r = calcularReverso({ ...jaTenho, margemMetaPct: 25 }, nd);
+    expect(calcularParaExibicao(jaTenho, nd)).toEqual(r);
+    expect(calcularUnificado(jaTenho, nd)).toEqual({
+      status: "ok",
+      preco: 30,
+      margemPct: r.margemLiquidaPct,
+      diagnostico: r.diagnostico,
+      lucroUnitario: r.lucroLiquido,
+    });
+    expect(calcularUnificado({ ...jaTenho, precoCobrado: 0 }, nd)).toEqual({ status: "sem-preco" });
+    expect(calcularUnificado({ ...corte, atendimentosMes: 0 }, nd)).toEqual({ status: "sem-volume" });
+    const a = calcularUnificado(corte, nd);
+    expect(a.margemPct).toBe(25);
+    expect(a.diagnostico).toBe("saudavel");
+    expect(pisoDoServico(jaTenho, nd)).toBe(calcularReverso({ ...jaTenho, margemMetaPct: 0 }, nd).precoMinimo);
+    expect(pisoDoServico({ ...jaTenho, precoCobrado: 0 }, nd)).toBeNull();
+    expect(pisoDoServico({ ...corte, atendimentosMes: 0 }, nd)).toBeNull();
+  });
+
+  it("negócio sem movimento: indicadores sem divisão por zero", () => {
+    const dre = montarDRE([], nd);
+    const ind = calcularIndicadoresGerenciais([], dre, nd, negocioExemplo());
+    expect(ind.pontoEquilibrioMix).toBe(Number.POSITIVE_INFINITY);
+    expect(ind.peContabilRS).toBe(Number.POSITIVE_INFINITY);
+    expect(ind.peFinanceiroRS).toBe(Number.POSITIVE_INFINITY);
+    expect(ind.peEconomicoRS).toBe(Number.POSITIVE_INFINITY);
+    expect(ind.margemSeguranca).toBeNull();
+    expect(ind.gao).toBeNull();
+  });
+
+  it("pacote: sem dados, percentuais demais e serviço com preço já definido", () => {
+    const itemCorte = { ...corte, calc: calcularServico(corte, nd) };
+    expect(calcularPrecoMinimoPacote([], nd).status).toBe("sem-dado");
+    expect(calcularPrecoMinimoPacote([itemCorte], null).status).toBe("sem-dado");
+    expect(calcularPrecoMinimoPacote([{ ...itemCorte, calc: { ...itemCorte.calc, preco: 0 } }], nd).status).toBe("sem-dado");
+    expect(calcularPrecoMinimoPacote([{ ...itemCorte, margemPct: 95 }], nd).status).toBe("trava-percentual");
+    const itemJaTenho = { ...jaTenho, calc: calcularReverso({ ...jaTenho, margemMetaPct: 25 }, nd) };
+    const r = calcularPrecoMinimoPacote([itemCorte, itemJaTenho], nd);
+    expect(r.status).toBe("ok");
+    expect(r.margemUsadaPct).toBeCloseTo(Math.min(25, itemJaTenho.calc.margemLiquidaPct), 10);
+  });
+
+  it("posição na concorrência: todos os casos", () => {
+    expect(posicaoNaConcorrencia(30, [25]).texto).toBe("acima do concorrente");
+    expect(posicaoNaConcorrencia(20, [25]).texto).toBe("abaixo do concorrente");
+    expect(posicaoNaConcorrencia(30, [20, 25]).texto).toBe("acima de todos");
+    expect(posicaoNaConcorrencia(22, [20, 25, 30]).texto).toBe("abaixo da mediana");
+    expect(posicaoNaConcorrencia(28, [20, 25, 30]).texto).toBe("acima da mediana");
+    expect(posicaoNaConcorrencia(10, [0]).texto).toBe("na mediana");
+  });
+
+  it("preço mais recente ignora valor zerado e concorrente sem preço", () => {
+    const lista = [
+      {
+        id: "a",
+        precos: [
+          { servicoId: "s", valor: 0, data: "2026-10-10" },
+          { servicoId: "s", valor: 25, data: "2026-09-01" },
+        ],
+      },
+      { id: "b" },
+    ];
+    const r = ultimoPrecoPorConcorrente(lista, "s");
+    expect(r.map((o) => [o.concorrente.id, o.valor, o.data])).toEqual([["a", 25, "2026-09-01"]]);
+  });
+
+  it("planilha do Observatório com dados faltando", () => {
+    const vazia = linhasPlanilhaObservatorio(null, null, null, null);
+    expect([vazia.concorrentes.length, vazia.precos.length, vazia.comparacao.length]).toEqual([1, 1, 1]);
+    const c = {
+      cidade: "Irará",
+      nome: "X",
+      tipo: "Salão",
+      precos: [{ servicoNome: "Corte", valor: 20, data: "2026-10-01", fonte: "??", servicoId: null }],
+    };
+    const r = linhasPlanilhaObservatorio([c], null, [corte], null, new Date("2026-10-16T12:00:00"));
+    expect(r.concorrentes[1]).toEqual(["Irará", "X", "Salão", "", null, 1, null, null]);
+    expect(r.precos[1]).toEqual(["Irará", "X", "Corte", "Não", 20, "01/10/2026", "Outro", 15]);
+    expect(r.comparacao.length).toBe(1); // sem negócio configurado, não há comparação
   });
 });

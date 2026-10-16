@@ -22,6 +22,9 @@ describe("cópia de segurança", () => {
   it("resumo para a confirmação", () => {
     expect(resumirCopia(dados)).toEqual({ temNegocio: true, servicos: 2, fechamentos: 1, produtos: 0, concorrentes: 2 });
   });
+  it("lista de concorrentes corrompida conta como zero no resumo", () => {
+    expect(resumirCopia({ "observatorio:concorrentes": "{inválido" }).concorrentes).toBe(0);
+  });
   it("nome do arquivo com a data", () => {
     expect(nomeArquivoCopia(new Date(2026, 9, 5))).toBe("preco-justo-copia-2026-10-05.json");
   });

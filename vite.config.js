@@ -42,10 +42,10 @@ export default defineConfig({
     environment: "node",
     coverage: {
       provider: "v8",
-      include: ["src/calculos.js", "src/copiaSeguranca.js"],
+      include: ["src/calculos.js", "src/copiaSeguranca.js", "src/termos.js"],
       reporter: ["text", "text-summary"],
       // Piso de cobertura: uma conta nova sem teste derruba a verificação.
-      thresholds: { lines: 85, functions: 80 },
+      thresholds: { lines: 95, functions: 90, branches: 85 }, // Bloco 15: subiu e passou a valer para ramos
     },
   },
 });
