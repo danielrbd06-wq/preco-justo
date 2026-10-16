@@ -1,10 +1,10 @@
 // Fluxo principal do app no navegador: primeiro acesso, dados de exemplo e
 // cada aba abrindo sem erro e sem rolagem para o lado.
-import { test, expect } from "@playwright/test";
-import { primeiroAcesso } from "./ajuda.js";
-import * as XLSX from "xlsx";
-import { readFileSync } from "node:fs";
 
+import { readFileSync } from "node:fs";
+import { expect, test } from "@playwright/test";
+import * as XLSX from "xlsx";
+import { primeiroAcesso } from "./ajuda.js";
 
 // Valores em reais saem com espaço não separável (R$ 1,00); \s cobre os dois.
 const reais = (valor) => new RegExp(`R\\$\\s${valor.replace(/\./g, "\\.")}`);

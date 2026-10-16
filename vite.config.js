@@ -1,5 +1,5 @@
-import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import { defineConfig } from "vite";
 import { VitePWA } from "vite-plugin-pwa";
 
 // Build padrão (PWA multiarquivo) — é o que a Vercel publica a partir da pasta dist/.
@@ -41,7 +41,9 @@ export default defineConfig({
     include: ["src/**/*.test.js"],
     environment: "node",
     coverage: {
-      provider: "v8", include: ["src/calculos.js", "src/copiaSeguranca.js"], reporter: ["text", "text-summary"],
+      provider: "v8",
+      include: ["src/calculos.js", "src/copiaSeguranca.js"],
+      reporter: ["text", "text-summary"],
       // Piso de cobertura: uma conta nova sem teste derruba a verificação.
       thresholds: { lines: 85, functions: 80 },
     },

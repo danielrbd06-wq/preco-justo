@@ -1,9 +1,10 @@
 // Bloco 9: o que foi digitado não se perde ao trocar de aba ou recarregar, e a
 // cópia de segurança leva os dados de volta depois de apagados.
-import { test, expect } from "@playwright/test";
+
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { primeiroAcesso, aceitarTermos } from "./ajuda.js";
+import { expect, test } from "@playwright/test";
+import { aceitarTermos, primeiroAcesso } from "./ajuda.js";
 
 const irPara = (page, aba) => page.getByRole("button", { name: aba }).first().click();
 const abrirSecao = async (page, titulo) => {
@@ -55,10 +56,7 @@ test("Cópia de segurança: baixar, apagar tudo e restaurar no primeiro acesso",
   await primeiroAcesso(page);
   await irPara(page, "Negócio");
   await abrirSecao(page, "Cópia de segurança");
-  const [download] = await Promise.all([
-    page.waitForEvent("download"),
-    page.getByRole("button", { name: "Baixar cópia" }).click(),
-  ]);
+  const [download] = await Promise.all([page.waitForEvent("download"), page.getByRole("button", { name: "Baixar cópia" }).click()]);
   expect(download.suggestedFilename()).toMatch(/^preco-justo-copia-\d{4}-\d{2}-\d{2}\.json$/);
   // Caminho só com letras sem acento (o nome do teste tem "ó").
   const arquivo = join(tmpdir(), `preco-justo-copia-${info.project.name}-${Date.now()}.json`);
@@ -76,7 +74,12 @@ test("Cópia de segurança: baixar, apagar tudo e restaurar no primeiro acesso",
   await Promise.all([page.waitForEvent("load"), page.getByRole("button", { name: "Sim, restaurar" }).click()]);
   await page.waitForTimeout(1000);
   await irPara(page, "Painel");
-  await expect(page.getByText(/R\$\s8\.998,96/).filter({ visible: true }).first()).toBeVisible();
+  await expect(
+    page
+      .getByText(/R\$\s8\.998,96/)
+      .filter({ visible: true })
+      .first(),
+  ).toBeVisible();
 });
 
 // Bloco 13: rascunho nos formulários do Estoque e do Observatório.
@@ -98,7 +101,10 @@ test("Estoque: produto novo e movimentação pela metade voltam depois de trocar
   await expect(page.getByText("Recuperamos o que você estava digitando")).toBeHidden();
 
   // Movimentação
-  await page.getByRole("button", { name: /Movimentar/ }).first().click();
+  await page
+    .getByRole("button", { name: /Movimentar/ })
+    .first()
+    .click();
   const observacao = page.getByPlaceholder("ex: NF 1234, fornecedor X");
   await observacao.fill("NF 99");
   await page.reload();
@@ -148,7 +154,9 @@ test("Fechamento do mês: depois de salvar, lembra de baixar a cópia de seguran
     const faturamento = page.locator("xpath=//span[starts-with(normalize-space(.),'Faturamento bruto do mês')]/ancestor::label[1]//input");
     await faturamento.click();
     await faturamento.pressSequentially("9000");
-    const atendimentos = page.locator("xpath=//span[starts-with(normalize-space(.),'Atendimentos realizados no mês')]/ancestor::label[1]//input");
+    const atendimentos = page.locator(
+      "xpath=//span[starts-with(normalize-space(.),'Atendimentos realizados no mês')]/ancestor::label[1]//input",
+    );
     await atendimentos.fill("150");
   } else {
     const quantidades = page.locator("xpath=//*[normalize-space(text())='Quantidade']/following::input[1]");
@@ -157,10 +165,7 @@ test("Fechamento do mês: depois de salvar, lembra de baixar a cópia de seguran
   await page.getByRole("button", { name: "Salvar fechamento" }).click();
   await expect(page.getByText("Fechamento salvo. Que tal guardar uma cópia?")).toBeVisible();
   await expect(page.getByText("Você ainda não baixou nenhuma cópia.")).toBeVisible();
-  const [download] = await Promise.all([
-    page.waitForEvent("download"),
-    page.getByRole("button", { name: "Baixar cópia agora" }).click(),
-  ]);
+  const [download] = await Promise.all([page.waitForEvent("download"), page.getByRole("button", { name: "Baixar cópia agora" }).click()]);
   expect(download.suggestedFilename()).toMatch(/^preco-justo-copia-\d{4}-\d{2}-\d{2}\.json$/);
   await expect(page.getByRole("button", { name: "Cópia baixada" })).toBeVisible();
   await expect(page.getByText("Fechamento salvo. Que tal guardar uma cópia?")).toBeHidden({ timeout: 5000 });

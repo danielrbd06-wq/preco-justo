@@ -25,7 +25,11 @@ export function nomeArquivoCopia(agora = new Date()) {
 export function resumirCopia(dados) {
   const chaves = Object.keys(dados);
   let concorrentes = 0;
-  try { concorrentes = JSON.parse(dados["observatorio:concorrentes"] || "[]").length || 0; } catch { concorrentes = 0; }
+  try {
+    concorrentes = JSON.parse(dados["observatorio:concorrentes"] || "[]").length || 0;
+  } catch {
+    concorrentes = 0;
+  }
   return {
     temNegocio: Boolean(dados["negocio:config"]),
     servicos: chaves.filter((k) => k.startsWith("servicos:")).length,
@@ -41,8 +45,10 @@ export function lerCopia(texto) {
   if (typeof texto !== "string" || texto.length === 0) return { ok: false, erro: "O arquivo está vazio." };
   if (texto.length > TAMANHO_MAXIMO_COPIA) return { ok: false, erro: "O arquivo é grande demais para ser uma cópia do Preço Justo." };
   let obj;
-  try { obj = JSON.parse(texto); } catch {
-    return { ok: false, erro: "Não foi possível ler o arquivo. Escolha o arquivo .json baixado em \"Baixar cópia\"." };
+  try {
+    obj = JSON.parse(texto);
+  } catch {
+    return { ok: false, erro: 'Não foi possível ler o arquivo. Escolha o arquivo .json baixado em "Baixar cópia".' };
   }
   if (!obj || typeof obj !== "object" || obj.app !== APP_COPIA || !obj.dados || typeof obj.dados !== "object" || Array.isArray(obj.dados)) {
     return { ok: false, erro: "Este arquivo não é uma cópia de segurança do Preço Justo." };

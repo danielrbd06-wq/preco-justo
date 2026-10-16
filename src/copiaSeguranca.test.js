@@ -1,5 +1,5 @@
-import { describe, it, expect } from "vitest";
-import { montarCopia, lerCopia, nomeArquivoCopia, resumirCopia, textoUltimaCopia } from "./copiaSeguranca.js";
+import { describe, expect, it } from "vitest";
+import { lerCopia, montarCopia, nomeArquivoCopia, resumirCopia, textoUltimaCopia } from "./copiaSeguranca.js";
 
 const dados = {
   "negocio:config": JSON.stringify({ proLabore: "2200" }),
@@ -38,9 +38,15 @@ describe("cópia de segurança", () => {
     expect(r.erro).toContain(trecho);
   });
   it("ignora chaves e valores fora do formato do app", () => {
-    const texto = JSON.stringify(montarCopia({
-      ...dados, "__proto__x": "a", "chave com espaço": "b", "servicos:c3": 123, "Negocio:config": "c",
-    }));
+    const texto = JSON.stringify(
+      montarCopia({
+        ...dados,
+        __proto__x: "a",
+        "chave com espaço": "b",
+        "servicos:c3": 123,
+        "Negocio:config": "c",
+      }),
+    );
     const r = lerCopia(texto);
     expect(r.ok).toBe(true);
     expect(Object.keys(r.dados).sort()).toEqual(Object.keys(dados).sort());
