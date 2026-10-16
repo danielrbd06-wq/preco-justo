@@ -3,6 +3,7 @@
 // "Apagar todos os dados deste aparelho".
 import { test, expect } from "@playwright/test";
 import { primeiroAcesso, aceitarTermos } from "./ajuda.js";
+import { VERSAO_TERMOS } from "../../src/termos.js";
 
 const dialogoAceite = (page) => page.getByRole("dialog", { name: "Antes de começar" });
 const caixaAceite = (page) => page.getByLabel("Li e aceito os Termos de Uso e estou ciente do Aviso de Privacidade.");
@@ -67,7 +68,7 @@ test("FAQ: Privacidade e termos mostra o aceite e apaga todos os dados do aparel
   await page.getByRole("button", { name: "FAQ" }).first().click();
   const cartao = page.locator("#privacidade-e-termos");
   await cartao.scrollIntoViewIfNeeded();
-  await expect(cartao.getByText(/Você aceitou a versão 0\.1 \(preliminar\) em \d{2}\/\d{2}\/\d{4}\./)).toBeVisible();
+  await expect(cartao.getByText(new RegExp(`Você aceitou a versão ${VERSAO_TERMOS.replace(".", "\\.")} \\(preliminar\\) em \\d{2}/\\d{2}/\\d{4}\\.`))).toBeVisible();
 
   await cartao.getByRole("button", { name: "Aviso de Privacidade" }).click();
   await expect(page.getByRole("dialog", { name: "Aviso de Privacidade" })).toBeVisible();

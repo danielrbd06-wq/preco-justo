@@ -14,6 +14,8 @@ export default defineConfig({
       registerType: "prompt",
       injectRegister: false,
       includeAssets: ["favicon-32.png", "apple-touch-icon.png"],
+      // Bloco 14: a fonte (woff2) entra no cache para o app funcionar offline com a letra certa.
+      workbox: { globPatterns: ["**/*.{js,wasm,css,html,woff2}"] },
       manifest: {
         name: "Preço Justo — Precificação e Gestão",
         short_name: "Preço Justo",

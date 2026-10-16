@@ -732,7 +732,7 @@ function useToast() {
 /* ======================================================================= */
 /* App                                                                      */
 /* ======================================================================= */
-const VERSAO_APP = "v7.20";
+const VERSAO_APP = "v7.21";
 const CHAVE_TEMA = "preco-justo:tema";
 
 /* Rede de segurança: se qualquer aba travar por um motivo que eu não       */
@@ -913,7 +913,6 @@ function App({ onSair, nomeEstabelecimento } = {}) {
       {/* isso (suporte já é universal nos navegadores mobile modernos).                   */}
       <div style={{ background: t.bg, minHeight: "100dvh", color: t.text, transition: "background .2s ease, color .2s ease" }}>
         <style>{`
-          @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap');
           * { font-family: 'Poppins', sans-serif; }
           .font-poppins { font-family: 'Poppins', sans-serif; }
           .font-num { font-variant-numeric: tabular-nums; }
