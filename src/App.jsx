@@ -9,12 +9,15 @@ import {
   CheckCircle2, ShieldCheck, Clock3, Sparkles, Info, Building2,
   Landmark, PiggyBank, TrendingUp, TrendingDown, HelpCircle,
   Download, Printer, X, Pencil, Sun, Moon, Monitor, Settings2, Share2, ChevronDown, CalendarCheck, Package,
-  Scissors, Hand, Flower2, CreditCard,
+  Scissors, Hand, Flower2, CreditCard, FileText,
 } from "lucide-react";
 import { createPortal } from "react-dom";
 import * as XLSX from "xlsx";
 import { useRegisterSW } from "virtual:pwa-register/react";
 import { montarCopia, lerCopia, nomeArquivoCopia } from "./copiaSeguranca.js";
+import {
+  VERSAO_TERMOS, DATA_TERMOS, CHAVE_ACEITE, montarAceite, lerAceite, chavesDoApp, RESUMO_ACEITE, DOCUMENTOS_LEGAIS,
+} from "./termos.js";
 import {
   fmtBRL, fmtPct, N, normalizarValorBR, ANEXO_III, ANEXO_V,
   aliquotaEfetiva, VINCULOS_PROFISSIONAL, vinculoDe, calcularComissaoEquipe, comissaoEfetiva, FORMAS_PAGAMENTO,
@@ -96,6 +99,9 @@ async function comRetry(fn, tentativas = 1) {
 const PREFIXO_CACHE_LOCAL = "preco-justo:cache-local:";
 function salvarCacheLocal(key, value) {
   try { window.localStorage.setItem(PREFIXO_CACHE_LOCAL + key, value); } catch { /* sem localStorage disponível — nada a fazer, silencioso */ }
+}
+function lerAceiteGuardado() {
+  try { return window.localStorage.getItem(CHAVE_ACEITE); } catch { return null; }
 }
 function lerCacheLocal(key) {
   try { return window.localStorage.getItem(PREFIXO_CACHE_LOCAL + key); } catch { return null; }
@@ -726,7 +732,7 @@ function useToast() {
 /* ======================================================================= */
 /* App                                                                      */
 /* ======================================================================= */
-const VERSAO_APP = "v7.18";
+const VERSAO_APP = "v7.19";
 const CHAVE_TEMA = "preco-justo:tema";
 
 /* Rede de segurança: se qualquer aba travar por um motivo que eu não       */
@@ -796,6 +802,16 @@ function App({ onSair, nomeEstabelecimento } = {}) {
   const [faqAlvo, setFaqAlvo] = useState(null);
   const [tabLoading, setTabLoading] = useState(true);
   const [servicoEmEdicao, setServicoEmEdicao] = useState(null);
+  // Bloco 12: aceite dos termos (lido na hora, sem esperar, para não piscar a tela)
+  // e documento legal aberto por cima da tela.
+  const [aceite, setAceite] = useState(() => lerAceite(lerAceiteGuardado()));
+  const [aceiteAnterior] = useState(() => Boolean(lerAceiteGuardado()));
+  const [documentoLegal, setDocumentoLegal] = useState(null);
+  const aceitarTermos = useCallback(() => {
+    const texto = montarAceite();
+    try { window.localStorage.setItem(CHAVE_ACEITE, texto); } catch { /* sem localStorage: vale só nesta sessão */ }
+    setAceite(lerAceite(texto));
+  }, []);
 
   const editarServico = useCallback((servico) => {
     setServicoEmEdicao(servico);
@@ -1018,7 +1034,7 @@ function App({ onSair, nomeEstabelecimento } = {}) {
                 )}
                 {tab === "estoque" && <Estoque negocio={negocio} onSalvarNegocio={salvarNegocio} />}
                 {tab === "observatorio" && <Observatorio servicos={servicos} nd={nd} cidadePerfil={negocio?.perfil?.cidade} />}
-                {tab === "faq" && <Faq alvo={faqAlvo} />}
+                {tab === "faq" && <Faq alvo={faqAlvo} aceite={aceite} onAbrirDocumento={setDocumentoLegal} />}
               </LimiteDeErro>
             </div>
           )}
@@ -1031,6 +1047,8 @@ function App({ onSair, nomeEstabelecimento } = {}) {
           onVerFaq={() => { setFaqAlvo({ id: explicacaoFaq, em: Date.now() }); setTab("faq"); }}
         />
       )}
+      {!aceite && <TelaAceite atualizacao={aceiteAnterior} onAceitar={aceitarTermos} onLer={setDocumentoLegal} />}
+      {documentoLegal && <PainelDocumentoLegal documento={documentoLegal} onFechar={() => setDocumentoLegal(null)} />}
     </FaqLinkContext.Provider>
     </ThemeCtx.Provider>
   );
@@ -1652,6 +1670,28 @@ function FormasPagamento({ recebimento, onChange }) {
 /* Cópia de segurança (Bloco 9): baixar um arquivo com todos os dados do app */
 /* e restaurar a partir dele. Os dados só existem neste aparelho; sem cópia, */
 /* limpar os dados do navegador ou trocar de celular apaga tudo.             */
+/* Gera e baixa o arquivo da cópia de segurança. Usada em Negócio → Cópia de */
+/* segurança e antes de "Apagar todos os dados" (Bloco 12).                 */
+async function baixarCopiaSeguranca() {
+  window.dispatchEvent(new Event(EVENTO_SALVAR_PENDENTES));
+  await new Promise((r) => setTimeout(r, 150));
+  const agora = new Date();
+  salvarComFallback("app:ultima-copia", agora.toISOString());
+  const chaves = (await listarComFallback("")).sort();
+  const dados = {};
+  for (const chave of chaves) {
+    const valor = await lerComFallback(chave);
+    if (typeof valor === "string") dados[chave] = valor;
+  }
+  const blob = new Blob([JSON.stringify(montarCopia(dados, { versaoApp: VERSAO_APP, agora }), null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = nomeArquivoCopia(agora);
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  return agora;
+}
+
 function CopiaSeguranca({ soRestaurar = false }) {
   const t = useT();
   const { show, node: toastNode } = useToast();
@@ -1666,22 +1706,7 @@ function CopiaSeguranca({ soRestaurar = false }) {
 
   const baixar = async () => {
     setBaixando(true); setErro(null);
-    window.dispatchEvent(new Event(EVENTO_SALVAR_PENDENTES));
-    await new Promise((r) => setTimeout(r, 150));
-    const agora = new Date();
-    salvarComFallback("app:ultima-copia", agora.toISOString());
-    const chaves = (await listarComFallback("")).sort();
-    const dados = {};
-    for (const chave of chaves) {
-      const valor = await lerComFallback(chave);
-      if (typeof valor === "string") dados[chave] = valor;
-    }
-    const blob = new Blob([JSON.stringify(montarCopia(dados, { versaoApp: VERSAO_APP, agora }), null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url; a.download = nomeArquivoCopia(agora);
-    document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    const agora = await baixarCopiaSeguranca();
     setUltima(agora.toISOString());
     setBaixando(false);
     show("Cópia baixada. Guarde o arquivo num lugar seguro.");
@@ -7359,62 +7384,89 @@ function encontrarPerguntaFaq(id) {
 /* o que ainda não foi salvo (rascunho de serviço, últimos segundos do      */
 /* Negócio), então o usuário lê e volta exatamente de onde estava.          */
 /* Celular: sobe de baixo (bottom sheet). Telas maiores: centralizado.      */
-function PainelExplicacao({ faqId, onFechar, onVerFaq }) {
+/* Folha (sobe de baixo no celular, diálogo no computador), com entrada e  */
+/* saída simétricas. Base da explicação do FAQ, dos documentos legais e da  */
+/* tela de aceite (Bloco 12). dispensavel=false: sem X, sem Esc, sem clique */
+/* fora — só a ação do rodapé fecha.                                        */
+function PainelFolha({ tituloId, cabecalho, rodape, onFechar, dispensavel = true, rotuloFechar = "Fechar", children }) {
   const t = useT();
-  const pergunta = encontrarPerguntaFaq(faqId);
   const [saindo, setSaindo] = useState(false);
   const fecharRef = useRef(null);
+  const dialogoRef = useRef(null);
   const focoAnteriorRef = useRef(null);
+  const onFecharRef = useRef(onFechar);
+  onFecharRef.current = onFechar;
 
   const fechar = useCallback((depois) => {
     setSaindo(true);
     const reduzido = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
     setTimeout(() => {
-      onFechar();
+      onFecharRef.current();
       if (typeof depois === "function") depois();
       else focoAnteriorRef.current?.focus?.();
     }, reduzido ? 0 : 180);
-  }, [onFechar]);
+  }, []);
 
   useEffect(() => {
     focoAnteriorRef.current = document.activeElement;
-    fecharRef.current?.focus();
+    (fecharRef.current || dialogoRef.current)?.focus();
+    if (!dispensavel) return undefined;
     const onKey = (e) => { if (e.key === "Escape") fechar(); };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [fechar]);
+  }, [fechar, dispensavel]);
 
-  if (!pergunta) return null;
   return (
     <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center no-print">
       <div
-        className={saindo ? "backdrop-out" : "backdrop-in"} onClick={() => fechar()} aria-hidden="true"
+        className={saindo ? "backdrop-out" : "backdrop-in"} onClick={dispensavel ? () => fechar() : undefined} aria-hidden="true"
         style={{ position: "absolute", inset: 0, background: "rgba(10, 14, 26, .45)", touchAction: "none" }}
       />
       <div
-        role="dialog" aria-modal="true" aria-labelledby="painel-explicacao-titulo"
-        className={(saindo ? "sheet-out" : "sheet-in") + " relative w-full sm:max-w-lg sm:mx-4 rounded-t-2xl sm:rounded-2xl flex flex-col"}
-        style={{ background: t.surface, border: `1px solid ${t.border}`, boxShadow: t.shadow, maxHeight: "82dvh" }}
+        ref={dialogoRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby={tituloId}
+        className={(saindo ? "sheet-out" : "sheet-in") + " relative w-full sm:max-w-lg sm:mx-4 rounded-t-2xl sm:rounded-2xl flex flex-col outline-none"}
+        style={{ background: t.surface, border: `1px solid ${t.border}`, boxShadow: t.shadow, maxHeight: "86dvh" }}
       >
         <div className="sm:hidden flex justify-center pt-2" aria-hidden="true">
           <span style={{ width: 36, height: 4, borderRadius: 4, background: t.border }} />
         </div>
         <div className="flex items-start justify-between gap-3 px-5 pt-3 sm:pt-5 pb-3" style={{ borderBottom: `1px solid ${t.border}` }}>
-          <div className="min-w-0">
-            <p className="text-[11px] font-medium inline-flex items-center gap-1" style={{ color: t.primaryText }}>
-              <HelpCircle size={12} /> {pergunta.categoria}
-            </p>
-            <p id="painel-explicacao-titulo" className="text-sm font-semibold mt-1" style={{ color: t.text }}>{pergunta.pergunta}</p>
-          </div>
-          <button ref={fecharRef} type="button" onClick={() => fechar()} aria-label="Fechar explicação"
-            className="btn-press touch-target shrink-0 rounded-full p-1.5" style={{ background: t.surfaceAlt, color: t.textMuted }}>
-            <X size={14} />
-          </button>
+          <div className="min-w-0">{cabecalho}</div>
+          {dispensavel && (
+            <button ref={fecharRef} type="button" onClick={() => fechar()} aria-label={rotuloFechar}
+              className="btn-press touch-target shrink-0 rounded-full p-1.5" style={{ background: t.surfaceAlt, color: t.textMuted }}>
+              <X size={14} />
+            </button>
+          )}
         </div>
         <div className="px-5 py-4 overflow-y-auto" style={{ overscrollBehavior: "contain" }}>
-          {pergunta.blocos.map((bloco, i) => <BlocoResposta key={i} bloco={bloco} />)}
+          {children}
         </div>
-        <div className="flex items-center justify-between gap-3 px-5 py-3" style={{ borderTop: `1px solid ${t.border}`, paddingBottom: "calc(.75rem + env(safe-area-inset-bottom))" }}>
+        {rodape && (
+          <div className="px-5 py-3" style={{ borderTop: `1px solid ${t.border}`, paddingBottom: "calc(.75rem + env(safe-area-inset-bottom))" }}>
+            {rodape(fechar)}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function PainelExplicacao({ faqId, onFechar, onVerFaq }) {
+  const t = useT();
+  const pergunta = encontrarPerguntaFaq(faqId);
+  if (!pergunta) return null;
+  return (
+    <PainelFolha
+      tituloId="painel-explicacao-titulo" onFechar={onFechar} rotuloFechar="Fechar explicação"
+      cabecalho={<>
+        <p className="text-[11px] font-medium inline-flex items-center gap-1" style={{ color: t.primaryText }}>
+          <HelpCircle size={12} /> {pergunta.categoria}
+        </p>
+        <p id="painel-explicacao-titulo" className="text-sm font-semibold mt-1" style={{ color: t.text }}>{pergunta.pergunta}</p>
+      </>}
+      rodape={(fechar) => (
+        <div className="flex items-center justify-between gap-3">
           <button type="button" onClick={() => fechar(onVerFaq)} className="btn-press text-xs font-medium underline underline-offset-2" style={{ color: t.textMuted }}>
             Ver todas as perguntas
           </button>
@@ -7422,8 +7474,202 @@ function PainelExplicacao({ faqId, onFechar, onVerFaq }) {
             Entendi, voltar
           </button>
         </div>
+      )}
+    >
+      {pergunta.blocos.map((bloco, i) => <BlocoResposta key={i} bloco={bloco} />)}
+    </PainelFolha>
+  );
+}
+
+/* ======================================================================= */
+/* Termos de Uso e Aviso de Privacidade (Bloco 12). Versão preliminar: os   */
+/* textos e as regras ficam em termos.js.                                   */
+/* ======================================================================= */
+const Girando = () => (
+  <span className="inline-block w-3 h-3 rounded-full border-2 border-current border-r-transparent animate-spin" aria-hidden="true" />
+);
+
+function PainelDocumentoLegal({ documento, onFechar }) {
+  const t = useT();
+  const doc = DOCUMENTOS_LEGAIS[documento];
+  if (!doc) return null;
+  const paragrafo = (texto, i) => <p key={i} className="text-sm leading-relaxed mb-1.5" style={{ color: t.text }}>{texto}</p>;
+  return (
+    <PainelFolha
+      tituloId="documento-legal-titulo" onFechar={onFechar} rotuloFechar={`Fechar ${doc.titulo}`}
+      cabecalho={<>
+        <p className="text-[11px] font-medium inline-flex items-center gap-1" style={{ color: t.primaryText }}>
+          <FileText size={12} /> Versão {VERSAO_TERMOS} (preliminar) · {DATA_TERMOS}
+        </p>
+        <p id="documento-legal-titulo" className="text-sm font-semibold mt-1" style={{ color: t.text }}>{doc.titulo}</p>
+      </>}
+      rodape={(fechar) => (
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-[11px]" style={{ color: t.textMuted }}>Versão preliminar, em revisão jurídica.</p>
+          <button type="button" onClick={() => fechar()} className="btn-press rounded-xl px-4 py-2 text-xs font-semibold shrink-0" style={{ background: t.primary, color: t.onPrimary }}>
+            Voltar
+          </button>
+        </div>
+      )}
+    >
+      <div className="space-y-4">
+        {doc.secoes.map((s) => (
+          <section key={s.titulo}>
+            <h3 className="text-sm font-semibold mb-1" style={{ color: t.text }}>{s.titulo}</h3>
+            {s.paragrafos.map(paragrafo)}
+            {s.itens && (
+              <ul className="list-disc pl-5 space-y-1 mb-1.5 text-sm leading-relaxed" style={{ color: t.text }}>
+                {s.itens.map((item, i) => <li key={i}>{item}</li>)}
+              </ul>
+            )}
+            {s.depois?.map(paragrafo)}
+          </section>
+        ))}
       </div>
-    </div>
+    </PainelFolha>
+  );
+}
+
+const ICONES_RESUMO_ACEITE = [ShieldCheck, Calculator, Download];
+
+function TelaAceite({ atualizacao, onAceitar, onLer }) {
+  const t = useT();
+  const [marcado, setMarcado] = useState(false);
+  const [aceitando, setAceitando] = useState(false);
+  return (
+    <PainelFolha
+      tituloId="aceite-titulo" dispensavel={false} onFechar={onAceitar}
+      cabecalho={<>
+        <p className="text-[11px] font-medium inline-flex items-center gap-1" style={{ color: t.primaryText }}>
+          <ShieldCheck size={12} /> {atualizacao ? "Os termos foram atualizados" : "Bem-vindo ao Preço Justo"}
+        </p>
+        <p id="aceite-titulo" className="text-base font-semibold mt-1" style={{ color: t.text }}>Antes de começar</p>
+      </>}
+      rodape={(fechar) => (
+        <div className="space-y-3">
+          <label className="flex items-start gap-2.5 text-sm cursor-pointer" style={{ color: t.text }}>
+            <input type="checkbox" checked={marcado} onChange={(e) => setMarcado(e.target.checked)} disabled={aceitando}
+              className="mt-0.5 w-5 h-5 shrink-0 cursor-pointer" style={{ accentColor: t.primary, colorScheme: t === TOKENS.escuro ? "dark" : "light" }} />
+            <span>Li e aceito os Termos de Uso e estou ciente do Aviso de Privacidade.</span>
+          </label>
+          <button type="button" disabled={!marcado || aceitando} onClick={() => { setAceitando(true); fechar(); }}
+            className="btn-press w-full rounded-xl px-4 py-3 text-sm font-semibold inline-flex items-center justify-center gap-2"
+            style={{ background: marcado ? t.primary : t.surfaceAlt, color: marcado ? t.onPrimary : t.textMuted, cursor: marcado ? "pointer" : "not-allowed" }}>
+            {aceitando && <CheckCircle2 size={16} className="pop-in" />}
+            Aceitar e continuar
+          </button>
+          <p className="text-[11px] text-center" style={{ color: t.textMuted }}>Versão {VERSAO_TERMOS} (preliminar), em revisão jurídica.</p>
+        </div>
+      )}
+    >
+      <ul className="space-y-3">
+        {RESUMO_ACEITE.map((texto, i) => {
+          const Icone = ICONES_RESUMO_ACEITE[i] || Info;
+          return (
+            <li key={i} className="flex items-start gap-3 text-sm" style={{ color: t.text }}>
+              <span className="shrink-0 rounded-full flex items-center justify-center" style={{ width: 28, height: 28, background: t.primarySoft, color: t.primaryText }}>
+                <Icone size={14} />
+              </span>
+              <span className="pt-1 leading-snug">{texto}</span>
+            </li>
+          );
+        })}
+      </ul>
+      <div className="flex flex-wrap gap-x-5 gap-y-2 mt-5">
+        {[["termos", "Ler os Termos de Uso"], ["privacidade", "Ler o Aviso de Privacidade"]].map(([id, rotulo]) => (
+          <button key={id} type="button" onClick={() => onLer(id)}
+            className="btn-press touch-target inline-flex items-center gap-1.5 text-sm font-medium underline underline-offset-2" style={{ color: t.primaryText }}>
+            <FileText size={14} /> {rotulo}
+          </button>
+        ))}
+      </div>
+    </PainelFolha>
+  );
+}
+
+/* Remove tudo o que o app guardou neste aparelho, inclusive o aceite. */
+async function apagarTodosOsDados() {
+  filaPendente = [];
+  if (window.storage?.delete) {
+    for (const chave of await listarComFallback("")) {
+      try { await window.storage.delete(chave, false); } catch { /* segue apagando o resto */ }
+    }
+  }
+  try {
+    const todas = [];
+    for (let i = 0; i < window.localStorage.length; i++) todas.push(window.localStorage.key(i));
+    chavesDoApp(todas).forEach((chave) => window.localStorage.removeItem(chave));
+  } catch { /* localStorage indisponível: não há o que apagar */ }
+}
+
+function CartaoPrivacidade({ aceite, onAbrirDocumento }) {
+  const t = useT();
+  const [confirmando, setConfirmando] = useState(false);
+  const [baixando, setBaixando] = useState(false);
+  const [copiaBaixada, setCopiaBaixada] = useState(false);
+  const [apagando, setApagando] = useState(false);
+  const dataAceite = aceite ? new Date(aceite.aceitoEm).toLocaleDateString("pt-BR") : null;
+
+  const baixar = async () => {
+    setBaixando(true);
+    await baixarCopiaSeguranca();
+    setBaixando(false); setCopiaBaixada(true);
+  };
+  const apagar = async () => {
+    setApagando(true);
+    await apagarTodosOsDados();
+    window.location.reload();
+  };
+  const botaoClaro = "btn-press inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-semibold";
+
+  return (
+    <section id="privacidade-e-termos" aria-labelledby="privacidade-titulo" className="fade-up rounded-2xl p-4 sm:p-5 space-y-3"
+      style={{ background: t.surface, border: `1px solid ${t.border}`, boxShadow: t.shadow, scrollMarginTop: 80 }}>
+      <div className="flex items-center gap-1.5">
+        <ShieldCheck size={14} style={{ color: t.primaryText }} />
+        <h2 id="privacidade-titulo" className="text-sm font-semibold" style={{ color: t.text }}>Privacidade e termos</h2>
+      </div>
+      <p className="text-sm" style={{ color: t.text }}>Seus dados ficam só neste aparelho. O Preço Justo não recebe nada do que você digita.</p>
+      {dataAceite && (
+        <p className="text-xs" style={{ color: t.textMuted }}>Você aceitou a versão {aceite.versao} (preliminar) em {dataAceite}.</p>
+      )}
+      <div className="flex flex-wrap gap-2">
+        {[["termos", "Termos de Uso"], ["privacidade", "Aviso de Privacidade"]].map(([id, rotulo]) => (
+          <button key={id} type="button" onClick={() => onAbrirDocumento(id)} className={botaoClaro}
+            style={{ background: t.surfaceAlt, color: t.text, border: `1px solid ${t.border}` }}>
+            <FileText size={14} /> {rotulo}
+          </button>
+        ))}
+      </div>
+      <div className="pt-3" style={{ borderTop: `1px solid ${t.border}` }}>
+        {!confirmando ? (
+          <button type="button" onClick={() => setConfirmando(true)} className="btn-press touch-target inline-flex items-center gap-1.5 text-xs font-medium" style={{ color: t.danger }}>
+            <Trash2 size={14} /> Apagar todos os dados deste aparelho
+          </button>
+        ) : (
+          <div className="pop-in rounded-xl p-3 space-y-2.5 text-xs" role="alert" style={{ background: t.dangerSoft, color: t.danger }}>
+            <p className="font-semibold">Apagar tudo o que o app guardou neste aparelho?</p>
+            <p>Negócio, serviços, fechamentos, estoque e Observatório serão apagados. Não dá para desfazer. Se quiser guardar, baixe antes a cópia de segurança.</p>
+            <div className="flex flex-wrap gap-2">
+              <button type="button" onClick={baixar} disabled={baixando || apagando} className={botaoClaro}
+                style={{ background: t.surface, color: t.text, border: `1px solid ${t.border}` }}>
+                {baixando ? <Girando /> : copiaBaixada ? <CheckCircle2 size={14} className="pop-in" /> : <Download size={14} />}
+                {baixando ? "Baixando…" : copiaBaixada ? "Cópia baixada" : "Baixar cópia antes"}
+              </button>
+              <button type="button" onClick={apagar} disabled={apagando} className={botaoClaro} style={{ background: t.danger, color: t.onDanger }}>
+                {apagando ? <Girando /> : <Trash2 size={14} />}
+                {apagando ? "Apagando…" : "Sim, apagar tudo"}
+              </button>
+              {!apagando && (
+                <button type="button" onClick={() => setConfirmando(false)} className="btn-press rounded-xl px-3 py-2 text-xs font-medium" style={{ color: t.danger }}>
+                  Cancelar
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    </section>
   );
 }
 
@@ -7447,7 +7693,7 @@ function FaqItem({ id, pergunta, blocos, aberto, onToggle, destaque }) {
   );
 }
 
-function Faq({ alvo } = {}) {
+function Faq({ alvo, aceite, onAbrirDocumento } = {}) {
   const t = useT();
   const [busca, setBusca] = useState("");
   const [categoriaAtiva, setCategoriaAtiva] = useState("Todos");
@@ -7537,6 +7783,8 @@ function Faq({ alvo } = {}) {
           );
         })
       )}
+
+      <CartaoPrivacidade aceite={aceite} onAbrirDocumento={onAbrirDocumento} />
 
       <p className="text-[11px] text-center pt-2" style={{ color: t.textMuted }}>
         {totalPerguntas} perguntas · baseado em princípios de contabilidade gerencial consolidados e na legislação vigente do Simples Nacional (LC 123/2006).

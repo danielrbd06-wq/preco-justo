@@ -3,7 +3,7 @@
 import { test, expect } from "@playwright/test";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { primeiroAcesso } from "./ajuda.js";
+import { primeiroAcesso, aceitarTermos } from "./ajuda.js";
 
 const irPara = (page, aba) => page.getByRole("button", { name: aba }).first().click();
 const abrirSecao = async (page, titulo) => {
@@ -66,6 +66,7 @@ test("Cópia de segurança: baixar, apagar tudo e restaurar no primeiro acesso",
 
   await page.evaluate(() => window.localStorage.clear());
   await page.reload();
+  await aceitarTermos(page);
   await expect(page.getByText("Vamos te conhecer rapidinho")).toBeVisible();
   await page.waitForTimeout(1000); // o app termina de carregar (troca o esqueleto pela tela)
 
