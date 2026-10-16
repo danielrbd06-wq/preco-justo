@@ -54,7 +54,7 @@ Antes de finalizar, revise a interface como **designer de produto sênior** e co
 
 - **React 18 + Vite 5 + Tailwind CSS 3**, fonte **Poppins** local (`@fontsource/poppins`), gráficos com **Recharts**, ícones **lucide-react**, exportação Excel com **xlsx**, mapa com **Leaflet** 1.9.4 sobre o **OpenStreetMap**.
 - PWA via **vite-plugin-pwa** (instalável, funciona offline).
-- Telas e componentes em `src/App.jsx` (~7.800 linhas), com componentes reutilizáveis definidos no próprio arquivo.
+- Telas e componentes em `src/App.jsx` (~12.300 linhas depois da formatação do Bloco 15), com componentes reutilizáveis definidos no próprio arquivo.
 - **Contas em `src/calculos.js`** (funções puras, sem React): leitura de valores, Simples Nacional, motores de preço (Modo A e B), custos variáveis, comissão e taxa médias, DRE, pontos de equilíbrio, pacote e comparação com a concorrência. Testadas em `src/calculos.test.js`.
 - `src/MapaConcorrencia.jsx`: mapa do Observatório, carregado sob demanda (`React.lazy`) para o Leaflet não pesar no resto do app.
 - Persistência: `window.storage` com fallback para `localStorage` (`listarComFallback()`), tudo no dispositivo do usuário.
@@ -81,11 +81,13 @@ As melhorias foram organizadas em **blocos** (os 7 da análise inicial e os segu
 | 12 | Termos de Uso e Aviso de Privacidade preliminares (v0.1): tela de aceite, leitura dos textos no app, FAQ → Privacidade e termos, "Apagar todos os dados deste aparelho" | ✅ Implementado (`docs/bloco-12-issue-e-pr.md`) |
 | 13 | Lembrete de cópia de segurança depois de salvar o fechamento do mês; rascunho automático no Observatório (concorrente e preço) e no Estoque (produto e movimentação) | ✅ Implementado (`docs/bloco-13-issues-e-pr.md`) |
 | 14 | Fonte Poppins dentro do app (`@fontsource/poppins`, sem Google Fonts, no cache offline); Aviso de Privacidade v0.2 com dois terceiros e teste que barra endereço externo não declarado | ✅ Implementado (`docs/bloco-14-issue-e-pr.md`) |
+| 15 | Biome (lint e formatação) no CI, código todo formatado, 16 testes de casos-limite e piso de cobertura com ramos (calculos.js: 71,8% → 92,9% dos ramos) | ✅ Implementado (`docs/bloco-15-issue-e-pr.md`) |
 
 ### Esteira de qualidade (Bloco 8) — vale para toda mudança
-- **Toda conta nova ou alterada vai para `src/calculos.js`, com teste em `src/calculos.test.js`.** Os valores esperados devem ser conferidos à mão e explicados no teste. A cobertura mínima de `calculos.js` é de 85% das linhas e 80% das funções; abaixo disso, a verificação falha.
+- **Toda conta nova ou alterada vai para `src/calculos.js`, com teste em `src/calculos.test.js`.** Os valores esperados devem ser conferidos à mão e explicados no teste. Caminhos de dado faltando ou zerado também ganham teste (bloco "casos-limite"). Piso de cobertura de `calculos.js`, `copiaSeguranca.js` e `termos.js` (Bloco 15): **95% das linhas, 90% das funções e 85% dos ramos**; abaixo disso, a verificação falha.
+- **Lint e formatação (Biome, Bloco 15):** `biome.json` com o preset recomendado; `npm run lint` (`biome ci`, o mesmo do CI) e `npm run formatar` (corrige e formata). Rode `npm run formatar` antes de cada commit. Exceção a uma regra só com comentário `biome-ignore <regra>: <motivo>` ao lado do código. `useExhaustiveDependencies` e `noArrayIndexKey` ficam como aviso (as omissões existentes são intencionais e não devem crescer). Commits só de formatação entram em `.git-blame-ignore-revs`.
 - Testes de navegador em `tests/e2e/` (Playwright, celular 375 px e computador 1280 px): primeiro acesso, exemplo carregado, valores do Painel, todas as abas sem erro de JavaScript e sem rolagem lateral, Calculadora e Observatório. Fluxo novo importante ganha teste aqui.
-- `.github/workflows/qualidade.yml` roda tudo em cada Pull Request para a `main`: `npm ci`, `npm run test:cobertura`, os dois builds e `npm run test:e2e`. A `main` deve ter a regra de proteção exigindo a verificação **"Testes e build"** antes do merge.
+- `.github/workflows/qualidade.yml` roda tudo em cada Pull Request para a `main`: `npm ci`, `npm run lint`, `npm run test:cobertura`, os dois builds e `npm run test:e2e`. A `main` deve ter a regra de proteção exigindo a verificação **"Testes e build"** antes do merge.
 - Rodar localmente: `npm test` (contas), `npm run test:cobertura`, `npm run build && npm run test:e2e` (navegador; na primeira vez, `npx playwright install chromium`).
 - Se um teste falhar porque a conta mudou de propósito, atualize o valor esperado **no mesmo PR** e explique a mudança na descrição.
 
@@ -164,6 +166,6 @@ As melhorias foram organizadas em **blocos** (os 7 da análise inicial e os segu
 ### Pendências e achados para virar Issue
 - **[Nova função — futuro]** Média anônima de preços entre usuários do app, por bairro. Exige servidor, consentimento, termos de uso e política de privacidade aprovados pelo jurídico (LGPD) e um número mínimo de negócios por grupo para não identificar ninguém. Adiada por decisão do Daniel no Bloco 6.
 - **[Dado]** A data exata da coleta dos estabelecimentos do Observatório não foi registrada. A tela mostra "até agosto de 2026" (limite comprovado pelo build de 16/08/2026). Ao refazer a coleta, preencher `COLETA_ESTABELECIMENTOS.data` em `src/App.jsx`.
-- **[Qualidade — próximo passo]** Lint e formatação automáticos (Biome) e cobertura de ramos (hoje 66%) ficaram de fora do Bloco 8 para não misturar milhares de mudanças de formatação com a esteira. Entram em um PR próprio.
+- **[Qualidade]** Revisar, um a um, os 23 avisos do Biome (`useExhaustiveDependencies` e `noArrayIndexKey`) e migrar os rascunhos do serviço novo e do fechamento para `useRascunho`.
 - **[Jurídico]** Revisão dos termos e do aviso de privacidade (v0.1 preliminar já no app). Pontos em aberto no documento: responsável (pessoa física ou CNPJ), limite de responsabilidade e foro (CDC), regras de cobrança, registros de acesso (Marco Civil, art. 15), transferência internacional, anonimização e concorrência na média de preços.
 - **[Segurança]** A biblioteca `xlsx` 0.18.5 tem alertas conhecidos (prototype pollution e ReDoS) que afetam a **leitura** de planilhas. O app hoje só **gera** planilhas (não lê arquivos do usuário), então o risco prático é baixo — reavaliar se um dia o app passar a importar `.xlsx`.

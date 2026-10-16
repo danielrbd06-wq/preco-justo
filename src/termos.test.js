@@ -1,7 +1,13 @@
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vitest";
 import {
-  VERSAO_TERMOS, CHAVE_ACEITE, montarAceite, lerAceite, chavesDoApp,
-  DOCUMENTOS_LEGAIS, RESUMO_ACEITE, CONTATO_PRIVACIDADE,
+  CHAVE_ACEITE,
+  CONTATO_PRIVACIDADE,
+  chavesDoApp,
+  DOCUMENTOS_LEGAIS,
+  lerAceite,
+  montarAceite,
+  RESUMO_ACEITE,
+  VERSAO_TERMOS,
 } from "./termos.js";
 
 describe("aceite dos termos", () => {
@@ -15,7 +21,11 @@ describe("aceite dos termos", () => {
     expect(lerAceite(montarAceite({ versao: "0.2" }), "0.2")).not.toBeNull();
   });
   it.each([
-    [null], [""], ["texto qualquer"], ["[]"], ["null"],
+    [null],
+    [""],
+    ["texto qualquer"],
+    ["[]"],
+    ["null"],
     [JSON.stringify({ versao: VERSAO_TERMOS })],
     [JSON.stringify({ versao: VERSAO_TERMOS, aceitoEm: "ontem" })],
   ])("registro ausente ou corrompido conta como não aceito (%#)", (texto) => {
@@ -44,7 +54,9 @@ describe("textos legais", () => {
     }
   });
   it("nenhuma marcação de rascunho ([a definir], [revisão jurídica]) aparece para o usuário", () => {
-    const tudo = [...RESUMO_ACEITE, ...secoes.flatMap((s) => [s.titulo, ...s.paragrafos, ...(s.itens || []), ...(s.depois || [])])].join(" ");
+    const tudo = [...RESUMO_ACEITE, ...secoes.flatMap((s) => [s.titulo, ...s.paragrafos, ...(s.itens || []), ...(s.depois || [])])].join(
+      " ",
+    );
     expect(tudo).not.toMatch(/[[\]]/);
   });
   it("o canal de contato aparece nos Termos e no Aviso de Privacidade", () => {
@@ -67,7 +79,9 @@ describe("serviços externos", () => {
   it("o código só acessa os serviços declarados no Aviso de Privacidade", async () => {
     const { readdirSync, readFileSync } = await import("node:fs");
     const arquivos = [
-      ...readdirSync("src").filter((f) => /\.(jsx?|css)$/.test(f) && !f.includes(".test.")).map((f) => `src/${f}`),
+      ...readdirSync("src")
+        .filter((f) => /\.(jsx?|css)$/.test(f) && !f.includes(".test."))
+        .map((f) => `src/${f}`),
       "index.html",
     ];
     const hosts = new Set();

@@ -1,9 +1,9 @@
 // Termos de Uso e Aviso de Privacidade (Bloco 12): aceite obrigatório na
 // primeira abertura, leitura dos textos, novo aceite quando a versão muda e
 // "Apagar todos os dados deste aparelho".
-import { test, expect } from "@playwright/test";
-import { primeiroAcesso, aceitarTermos } from "./ajuda.js";
+import { expect, test } from "@playwright/test";
 import { VERSAO_TERMOS } from "../../src/termos.js";
+import { aceitarTermos, primeiroAcesso } from "./ajuda.js";
 
 const dialogoAceite = (page) => page.getByRole("dialog", { name: "Antes de começar" });
 const caixaAceite = (page) => page.getByLabel("Li e aceito os Termos de Uso e estou ciente do Aviso de Privacidade.");
@@ -56,7 +56,9 @@ test("aceite: só libera com a caixa marcada, permite ler os textos e é lembrad
 
 test("versão nova dos termos pede o aceite de novo", async ({ page }) => {
   await page.goto("/");
-  await page.evaluate(() => window.localStorage.setItem("preco-justo:aceite-termos", JSON.stringify({ versao: "0.0", aceitoEm: "2026-01-01T12:00:00.000Z" })));
+  await page.evaluate(() =>
+    window.localStorage.setItem("preco-justo:aceite-termos", JSON.stringify({ versao: "0.0", aceitoEm: "2026-01-01T12:00:00.000Z" })),
+  );
   await page.reload();
   await expect(dialogoAceite(page)).toBeVisible();
   await expect(dialogoAceite(page).getByText("Os termos foram atualizados")).toBeVisible();
@@ -68,7 +70,9 @@ test("FAQ: Privacidade e termos mostra o aceite e apaga todos os dados do aparel
   await page.getByRole("button", { name: "FAQ" }).first().click();
   const cartao = page.locator("#privacidade-e-termos");
   await cartao.scrollIntoViewIfNeeded();
-  await expect(cartao.getByText(new RegExp(`Você aceitou a versão ${VERSAO_TERMOS.replace(".", "\\.")} \\(preliminar\\) em \\d{2}/\\d{2}/\\d{4}\\.`))).toBeVisible();
+  await expect(
+    cartao.getByText(new RegExp(`Você aceitou a versão ${VERSAO_TERMOS.replace(".", "\\.")} \\(preliminar\\) em \\d{2}/\\d{2}/\\d{4}\\.`)),
+  ).toBeVisible();
 
   await cartao.getByRole("button", { name: "Aviso de Privacidade" }).click();
   await expect(page.getByRole("dialog", { name: "Aviso de Privacidade" })).toBeVisible();
@@ -82,10 +86,7 @@ test("FAQ: Privacidade e termos mostra o aceite e apaga todos os dados do aparel
 
   // Baixa a cópia antes e depois apaga.
   await cartao.getByRole("button", { name: "Apagar todos os dados deste aparelho" }).click();
-  const [download] = await Promise.all([
-    page.waitForEvent("download"),
-    cartao.getByRole("button", { name: "Baixar cópia antes" }).click(),
-  ]);
+  const [download] = await Promise.all([page.waitForEvent("download"), cartao.getByRole("button", { name: "Baixar cópia antes" }).click()]);
   expect(download.suggestedFilename()).toMatch(/^preco-justo-copia-\d{4}-\d{2}-\d{2}\.json$/);
   await expect(cartao.getByRole("button", { name: "Cópia baixada" })).toBeVisible();
 

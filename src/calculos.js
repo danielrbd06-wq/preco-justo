@@ -4,10 +4,7 @@
 /* (src/calculos.test.js). Qualquer conta nova entra aqui, com teste.      */
 /* ======================================================================= */
 
-export const fmtBRL = (v) =>
-  new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(
-    Number.isFinite(v) ? v : 0
-  );
+export const fmtBRL = (v) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(Number.isFinite(v) ? v : 0);
 
 // Percentual no padrão brasileiro (vírgula decimal), igual ao fmtBRL — antes saía "6.00%"
 // ao lado de "R$ 8.000,00" na mesma frase.
@@ -96,7 +93,9 @@ export function calcularComissaoEquipe(profissionais, { parceriaPermitida = true
     .filter((p) => p.ativo !== false && (p.nome || "").trim())
     .filter((p) => ((vinculoDe(p) === "comissao" || vinculoDe(p) === "parceiro") && comPct(p)) || vinculoDe(p) === "dono")
     .map((p) => ({
-      id: p.id, nome: p.nome.trim(), vinculo: vinculoDe(p),
+      id: p.id,
+      nome: p.nome.trim(),
+      vinculo: vinculoDe(p),
       pct: vinculoDe(p) === "dono" ? 0 : Math.min(99, Math.max(0, N(p.comissaoPct))),
       atendimentos: Math.max(0, N(p.atendimentosMes)),
       // Bloco 11: cota-parte que sai da receita do salão (parceiro válido em salão que não é MEI).
@@ -152,7 +151,8 @@ export function calcularTaxaRecebimento(recebimento) {
   const itens = FORMAS_PAGAMENTO.map((f) => {
     const r = recebimento?.[f.id] || {};
     return {
-      id: f.id, label: f.label,
+      id: f.id,
+      label: f.label,
       participacao: Math.max(0, N(r.participacaoPct)),
       taxa: f.semTaxa ? 0 : Math.min(99, Math.max(0, N(r.taxaPct))),
     };
@@ -194,7 +194,10 @@ export function computeNegocioDerivado(n) {
   const recebimento = calcularTaxaRecebimento(n.recebimento);
   const taxaRecebimento = recebimento?.completo ? recebimento : null;
 
-  let impostoPct = 0, fatorR = null, anexoUsado = null, aliqInfo = null;
+  let impostoPct = 0,
+    fatorR = null,
+    anexoUsado = null,
+    aliqInfo = null;
   if (n.regime === "simples") {
     const rbt12 = N(n.rbt12);
     const folha12 = N(n.folha12);
@@ -206,9 +209,23 @@ export function computeNegocioDerivado(n) {
   }
 
   return {
-    custosFixosSoma, proLabore, meiDas, custoFixoTotal, custoFixoNaoCaixa,
-    receitaAluguelCadeiras, custoFixoLiquido, comissaoEquipe, taxaRecebimento, parceriaPermitida, temParceriaValida,
-    horasTotais, custoFixoPorHora, impostoPct, fatorR, anexoUsado, aliqInfo,
+    custosFixosSoma,
+    proLabore,
+    meiDas,
+    custoFixoTotal,
+    custoFixoNaoCaixa,
+    receitaAluguelCadeiras,
+    custoFixoLiquido,
+    comissaoEquipe,
+    taxaRecebimento,
+    parceriaPermitida,
+    temParceriaValida,
+    horasTotais,
+    custoFixoPorHora,
+    impostoPct,
+    fatorR,
+    anexoUsado,
+    aliqInfo,
     numeroProfissionais: Math.max(1, N(n.numeroProfissionais) || 1),
     diasMes: N(n.diasMes),
     insumosCompartilhados: n.insumosCompartilhados || [],
@@ -293,16 +310,37 @@ export function somaCustosVariaveis(custosVariaveis, contexto) {
 /* de "totalVariaveis" ficou inteligente)                                  */
 /* ======================================================================= */
 
-export function calcularServico({ custosVariaveis, comissaoPct: comissaoInformada, comissaoModo, comissaoEhCotaParte, parcelaParceiroPct: parcelaInformada, taxaCartaoPct: taxaInformada, taxaModo, margemPct, horasPorAtendimento, atendimentosMes }, nd) {
-  if (!nd || !nd.horasTotais) return { status: "sem-negocio" };
+export function calcularServico(
+  {
+    custosVariaveis,
+    comissaoPct: comissaoInformada,
+    comissaoModo,
+    comissaoEhCotaParte,
+    parcelaParceiroPct: parcelaInformada,
+    taxaCartaoPct: taxaInformada,
+    taxaModo,
+    margemPct,
+    horasPorAtendimento,
+    atendimentosMes,
+  },
+  nd,
+) {
+  if (!nd?.horasTotais) return { status: "sem-negocio" };
   const comissaoPct = comissaoEfetiva({ comissaoPct: comissaoInformada, comissaoModo }, nd);
   const taxaInformadaOuMedia = taxaEfetiva({ taxaCartaoPct: taxaInformada, taxaModo }, nd);
   // Bloco 11: a cota-parte do parceiro fica fora da receita do salão. O imposto e a
   // taxa da maquininha (dividida pela cota) incidem só sobre a parte do salão.
-  const parcelaParceiroPct = parcelaParceiro({ comissaoPct: comissaoInformada, comissaoModo, comissaoEhCotaParte, parcelaParceiroPct: parcelaInformada }, nd);
+  const parcelaParceiroPct = parcelaParceiro(
+    { comissaoPct: comissaoInformada, comissaoModo, comissaoEhCotaParte, parcelaParceiroPct: parcelaInformada },
+    nd,
+  );
   const fatorSalao = 1 - parcelaParceiroPct / 100;
   const taxaCartaoPct = taxaInformadaOuMedia * fatorSalao;
-  const totalVariaveis = somaCustosVariaveis(custosVariaveis, { atendimentosMes, diasMesNegocio: nd.diasMes, insumosCompartilhados: nd.insumosCompartilhados });
+  const totalVariaveis = somaCustosVariaveis(custosVariaveis, {
+    atendimentosMes,
+    diasMesNegocio: nd.diasMes,
+    insumosCompartilhados: nd.insumosCompartilhados,
+  });
   const imposto = nd.impostoPct * fatorSalao;
   const soma = N(comissaoPct) + N(taxaCartaoPct) + imposto + N(margemPct);
 
@@ -324,10 +362,22 @@ export function calcularServico({ custosVariaveis, comissaoPct: comissaoInformad
   const pontoEquilibrioServico = margemContribuicaoUnitaria > 0 ? nd.custoFixoLiquido / margemContribuicaoUnitaria : Infinity;
 
   return {
-    status: "ok", totalVariaveis, custoFixoRateado, preco, comissaoPct, taxaCartaoPct,
-    parcelaParceiroPct, impostoSobrePrecoPct: imposto, valorCotaParte,
-    valorComissao, valorTaxaCartao, valorImposto, valorMargem,
-    margemContribuicaoUnitaria, lucroProjetadoMes, pontoEquilibrioServico,
+    status: "ok",
+    totalVariaveis,
+    custoFixoRateado,
+    preco,
+    comissaoPct,
+    taxaCartaoPct,
+    parcelaParceiroPct,
+    impostoSobrePrecoPct: imposto,
+    valorCotaParte,
+    valorComissao,
+    valorTaxaCartao,
+    valorImposto,
+    valorMargem,
+    margemContribuicaoUnitaria,
+    lucroProjetadoMes,
+    pontoEquilibrioServico,
   };
 }
 
@@ -354,17 +404,39 @@ export function pontoEquilibrioSemanal(mensal, _diasMesNegocioNaoUsado) {
 /* Verificado numericamente que os dois modos batem exatamente (ver PR).   */
 /* ======================================================================= */
 
-export function calcularReverso({ custosVariaveis, comissaoPct: comissaoInformada, comissaoModo, comissaoEhCotaParte, parcelaParceiroPct: parcelaInformada, taxaCartaoPct: taxaInformada, taxaModo, precoCobrado, horasPorAtendimento, atendimentosMes, margemMetaPct }, nd) {
-  if (!nd || !nd.horasTotais) return { status: "sem-negocio" };
+export function calcularReverso(
+  {
+    custosVariaveis,
+    comissaoPct: comissaoInformada,
+    comissaoModo,
+    comissaoEhCotaParte,
+    parcelaParceiroPct: parcelaInformada,
+    taxaCartaoPct: taxaInformada,
+    taxaModo,
+    precoCobrado,
+    horasPorAtendimento,
+    atendimentosMes,
+    margemMetaPct,
+  },
+  nd,
+) {
+  if (!nd?.horasTotais) return { status: "sem-negocio" };
   const comissaoPct = comissaoEfetiva({ comissaoPct: comissaoInformada, comissaoModo }, nd);
   // Bloco 11: mesma regra do Modo A para a cota-parte do parceiro.
-  const parcelaParceiroPct = parcelaParceiro({ comissaoPct: comissaoInformada, comissaoModo, comissaoEhCotaParte, parcelaParceiroPct: parcelaInformada }, nd);
+  const parcelaParceiroPct = parcelaParceiro(
+    { comissaoPct: comissaoInformada, comissaoModo, comissaoEhCotaParte, parcelaParceiroPct: parcelaInformada },
+    nd,
+  );
   const fatorSalao = 1 - parcelaParceiroPct / 100;
   const taxaCartaoPct = taxaEfetiva({ taxaCartaoPct: taxaInformada, taxaModo }, nd) * fatorSalao;
   const preco = N(precoCobrado);
   if (preco <= 0) return { status: "sem-preco" };
 
-  const totalVariaveis = somaCustosVariaveis(custosVariaveis, { atendimentosMes, diasMesNegocio: nd.diasMes, insumosCompartilhados: nd.insumosCompartilhados });
+  const totalVariaveis = somaCustosVariaveis(custosVariaveis, {
+    atendimentosMes,
+    diasMesNegocio: nd.diasMes,
+    insumosCompartilhados: nd.insumosCompartilhados,
+  });
   const horas = N(horasPorAtendimento);
   const imposto = nd.impostoPct * fatorSalao;
   const custoFixoRateado = nd.custoFixoPorHora * horas;
@@ -398,10 +470,30 @@ export function calcularReverso({ custosVariaveis, comissaoPct: comissaoInformad
   if (lucroLiquido >= 0) diagnostico = margemLiquidaPct >= N(margemMetaPct) ? "saudavel" : "apertado";
 
   return {
-    status: "ok", diagnostico, comissaoPct, taxaCartaoPct, parcelaParceiroPct, impostoSobrePrecoPct: imposto, valorCotaParte,
-    preco, totalVariaveis, custoFixoRateado, valorComissao, valorTaxaCartao, valorImposto,
-    custoTotal, lucroBruto, lucroLiquido, margemLiquidaPct, markup, lucroPorHora,
-    margemContribuicaoUnitaria, pontoEquilibrioServico, precoMinimo, precoIdeal, lucroProjetadoMes,
+    status: "ok",
+    diagnostico,
+    comissaoPct,
+    taxaCartaoPct,
+    parcelaParceiroPct,
+    impostoSobrePrecoPct: imposto,
+    valorCotaParte,
+    preco,
+    totalVariaveis,
+    custoFixoRateado,
+    valorComissao,
+    valorTaxaCartao,
+    valorImposto,
+    custoTotal,
+    lucroBruto,
+    lucroLiquido,
+    margemLiquidaPct,
+    markup,
+    lucroPorHora,
+    margemContribuicaoUnitaria,
+    pontoEquilibrioServico,
+    precoMinimo,
+    precoIdeal,
+    lucroProjetadoMes,
   };
 }
 
@@ -445,7 +537,18 @@ export function montarDREMensal(fechamento) {
   const custosFixos = N(fechamento.custosFixosSnapshot);
   const aluguelRecebido = N(fechamento.aluguelRecebidoSnapshot);
   const resultadoOperacional = margemContribuicaoTotal - custosFixos + aluguelRecebido;
-  return { valorCobrado, cotaParteParceiros, receitaBruta, impostos, receitaLiquida, custosVariaveisTotais, margemContribuicaoTotal, custosFixos, aluguelRecebido, resultadoOperacional };
+  return {
+    valorCobrado,
+    cotaParteParceiros,
+    receitaBruta,
+    impostos,
+    receitaLiquida,
+    custosVariaveisTotais,
+    margemContribuicaoTotal,
+    custosFixos,
+    aluguelRecebido,
+    resultadoOperacional,
+  };
 }
 
 export function montarDRE(servicosCalc, nd) {
@@ -458,7 +561,8 @@ export function montarDRE(servicosCalc, nd) {
   const impostos = validos.reduce((s, x) => s + x.calc.valorImposto * N(x.atendimentosMes), 0);
   const receitaLiquida = receitaBruta - impostos;
   const custosVariaveisTotais = validos.reduce(
-    (s, x) => s + (x.calc.totalVariaveis + x.calc.valorComissao - N(x.calc.valorCotaParte) + x.calc.valorTaxaCartao) * N(x.atendimentosMes), 0
+    (s, x) => s + (x.calc.totalVariaveis + x.calc.valorComissao - N(x.calc.valorCotaParte) + x.calc.valorTaxaCartao) * N(x.atendimentosMes),
+    0,
   );
   const margemContribuicaoTotal = receitaLiquida - custosVariaveisTotais;
   const custosFixos = nd.custoFixoTotal;
@@ -470,9 +574,19 @@ export function montarDRE(servicosCalc, nd) {
   const resultadoOperacional = margemContribuicaoTotal - custosFixos + aluguelRecebido;
   const rcm = receitaBruta > 0 ? margemContribuicaoTotal / receitaBruta : 0;
   return {
-    valorCobrado, cotaParteParceiros,
-    receitaBruta, impostos, receitaLiquida, custosVariaveisTotais, margemContribuicaoTotal,
-    custosFixos, aluguelRecebido, custosFixosLiquidos, resultadoOperacional, rcm, qtdInvalidos: servicosCalc.length - validos.length,
+    valorCobrado,
+    cotaParteParceiros,
+    receitaBruta,
+    impostos,
+    receitaLiquida,
+    custosVariaveisTotais,
+    margemContribuicaoTotal,
+    custosFixos,
+    aluguelRecebido,
+    custosFixosLiquidos,
+    resultadoOperacional,
+    rcm,
+    qtdInvalidos: servicosCalc.length - validos.length,
   };
 }
 
@@ -484,19 +598,30 @@ export function calcularIndicadoresGerenciais(servicosValidos, dre, nd, negocio)
   // ponderada (MCP) é a soma de (peso × margem de contribuição unitária) de cada um. O
   // ponto de equilíbrio do negócio inteiro, em atendimentos, é custoFixoTotal ÷ MCP.
   const somaAtendimentosMix = servicosValidos.reduce((s, x) => s + N(x.atendimentosMes), 0);
-  const margemContribuicaoPonderada = somaAtendimentosMix > 0
-    ? servicosValidos.reduce((s, x) => s + (N(x.atendimentosMes) / somaAtendimentosMix) * x.calc.margemContribuicaoUnitaria, 0)
-    : 0;
+  const margemContribuicaoPonderada =
+    somaAtendimentosMix > 0
+      ? servicosValidos.reduce((s, x) => s + (N(x.atendimentosMes) / somaAtendimentosMix) * x.calc.margemContribuicaoUnitaria, 0)
+      : 0;
   const pontoEquilibrioMix = margemContribuicaoPonderada > 0 ? nd.custoFixoLiquido / margemContribuicaoPonderada : Infinity;
 
   const custoOportunidadeMes = N(negocio.capitalInvestido) * (N(negocio.taxaRetorno) / 100);
   const peContabilRS = dre.rcm > 0 ? dre.custosFixosLiquidos / dre.rcm : Infinity;
   const peFinanceiroRS = dre.rcm > 0 ? Math.max(0, dre.custosFixosLiquidos - nd.custoFixoNaoCaixa) / dre.rcm : Infinity;
   const peEconomicoRS = dre.rcm > 0 ? (dre.custosFixosLiquidos + custoOportunidadeMes) / dre.rcm : Infinity;
-  const margemSeguranca = dre.receitaBruta > 0 && Number.isFinite(peContabilRS)
-    ? ((dre.receitaBruta - peContabilRS) / dre.receitaBruta) * 100 : null;
+  const margemSeguranca =
+    dre.receitaBruta > 0 && Number.isFinite(peContabilRS) ? ((dre.receitaBruta - peContabilRS) / dre.receitaBruta) * 100 : null;
   const gao = dre.resultadoOperacional > 0 ? dre.margemContribuicaoTotal / dre.resultadoOperacional : null;
-  return { somaAtendimentosMix, margemContribuicaoPonderada, pontoEquilibrioMix, custoOportunidadeMes, peContabilRS, peFinanceiroRS, peEconomicoRS, margemSeguranca, gao };
+  return {
+    somaAtendimentosMix,
+    margemContribuicaoPonderada,
+    pontoEquilibrioMix,
+    custoOportunidadeMes,
+    peContabilRS,
+    peFinanceiroRS,
+    peEconomicoRS,
+    margemSeguranca,
+    gao,
+  };
 }
 
 /* Seletor de pacote: escolhe 2+ serviços já salvos e pré-preenche um combo    */
@@ -522,7 +647,8 @@ export function calcularPrecoMinimoPacote(itensSelecionados, nd) {
   const comissaoPctPonderada = itensSelecionados.reduce((s, it) => s + comissaoEfetiva(it, nd) * it.calc.preco, 0) / somaPrecos;
   // Bloco 11: taxa e imposto já descontada a cota-parte de parceiro de cada serviço.
   const fatorSalao = (it) => 1 - parcelaParceiro(it, nd) / 100;
-  const taxaCartaoPctPonderada = itensSelecionados.reduce((s, it) => s + taxaEfetiva(it, nd) * fatorSalao(it) * it.calc.preco, 0) / somaPrecos;
+  const taxaCartaoPctPonderada =
+    itensSelecionados.reduce((s, it) => s + taxaEfetiva(it, nd) * fatorSalao(it) * it.calc.preco, 0) / somaPrecos;
   const impostoPctPonderado = itensSelecionados.reduce((s, it) => s + nd.impostoPct * fatorSalao(it) * it.calc.preco, 0) / somaPrecos;
 
   const margensEfetivas = itensSelecionados.map((it) => ({
@@ -561,12 +687,14 @@ export function mediana(valores) {
 /* Preço mais recente que cada concorrente tem anotado para um serviço.     */
 /* Assim, anotar o mesmo concorrente duas vezes não pesa em dobro.          */
 export function ultimoPrecoPorConcorrente(concorrentes, servicoId) {
-  return concorrentes.map((c) => {
-    const doServico = (c.precos || []).filter((p) => p.servicoId === servicoId && N(p.valor) > 0);
-    if (doServico.length === 0) return null;
-    const ultimo = doServico.reduce((a, b) => (b.data > a.data ? b : a));
-    return { concorrente: c, valor: N(ultimo.valor), data: ultimo.data };
-  }).filter(Boolean);
+  return concorrentes
+    .map((c) => {
+      const doServico = (c.precos || []).filter((p) => p.servicoId === servicoId && N(p.valor) > 0);
+      if (doServico.length === 0) return null;
+      const ultimo = doServico.reduce((a, b) => (b.data > a.data ? b : a));
+      return { concorrente: c, valor: N(ultimo.valor), data: ultimo.data };
+    })
+    .filter(Boolean);
 }
 
 /* Piso do serviço: o preço que só cobre os custos, sem lucro (margem 0).   */
@@ -593,7 +721,7 @@ export const DIAS_PRECO_ANTIGO = 180;
 
 /* Dias entre uma data AAAA-MM-DD e hoje (meio-dia, para não errar pelo fuso). */
 export function diasDesde(iso, hoje = new Date()) {
-  return Math.floor((hoje.getTime() - new Date(iso + "T12:00:00").getTime()) / 86400000);
+  return Math.floor((hoje.getTime() - new Date(`${iso}T12:00:00`).getTime()) / 86400000);
 }
 
 /* Onde o preço do usuário fica entre os preços anotados dos concorrentes.   */
@@ -605,11 +733,22 @@ export function posicaoNaConcorrencia(seu, valores) {
   const difPct = med > 0 ? ((seu - med) / med) * 100 : 0;
   const um = valores.length === 1;
   let chave, texto;
-  if (Math.abs(difPct) < 2.5) { chave = "mediana"; texto = "na mediana"; }
-  else if (seu < min) { chave = "abaixo-todos"; texto = um ? "abaixo do concorrente" : "abaixo de todos"; }
-  else if (seu > max) { chave = "acima-todos"; texto = um ? "acima do concorrente" : "acima de todos"; }
-  else if (difPct < 0) { chave = "abaixo"; texto = "abaixo da mediana"; }
-  else { chave = "acima"; texto = "acima da mediana"; }
+  if (Math.abs(difPct) < 2.5) {
+    chave = "mediana";
+    texto = "na mediana";
+  } else if (seu < min) {
+    chave = "abaixo-todos";
+    texto = um ? "abaixo do concorrente" : "abaixo de todos";
+  } else if (seu > max) {
+    chave = "acima-todos";
+    texto = um ? "acima do concorrente" : "acima de todos";
+  } else if (difPct < 0) {
+    chave = "abaixo";
+    texto = "abaixo da mediana";
+  } else {
+    chave = "acima";
+    texto = "acima da mediana";
+  }
   return { chave, texto, difPct, med, min, max };
 }
 
@@ -635,15 +774,34 @@ export function linhasPlanilhaObservatorio(concorrentes, meusLocais, servicos, n
 
   const abaPrecos = [
     ["Cidade", "Concorrente", "Serviço", "Entra na comparação", "Preço (R$)", "Data", "Onde viu", "Dias desde a anotação"],
-    ...lista.flatMap((c) => (c.precos || []).map((p) => [
-      c.cidade, c.nome, p.servicoNome, p.servicoId && servicoExiste(p.servicoId) ? "Sim" : "Não",
-      centavos(N(p.valor)), dataBR(p.data), fonte(p.fonte), diasDesde(p.data, hoje),
-    ])),
+    ...lista.flatMap((c) =>
+      (c.precos || []).map((p) => [
+        c.cidade,
+        c.nome,
+        p.servicoNome,
+        p.servicoId && servicoExiste(p.servicoId) ? "Sim" : "Não",
+        centavos(N(p.valor)),
+        dataBR(p.data),
+        fonte(p.fonte),
+        diasDesde(p.data, hoje),
+      ]),
+    ),
   ];
 
   const abaComparacao = [
-    ["Cidade", "Serviço", "Meu preço (R$)", "Meu piso, sem lucro (R$)", "Concorrentes", "Menor (R$)", "Mediana (R$)", "Maior (R$)",
-      "Diferença para a mediana (%)", "Situação", "Preços com mais de 6 meses"],
+    [
+      "Cidade",
+      "Serviço",
+      "Meu preço (R$)",
+      "Meu piso, sem lucro (R$)",
+      "Concorrentes",
+      "Menor (R$)",
+      "Mediana (R$)",
+      "Maior (R$)",
+      "Diferença para a mediana (%)",
+      "Situação",
+      "Preços com mais de 6 meses",
+    ],
   ];
   const cidades = [...new Set(lista.map((c) => c.cidade))].sort((a, b) => a.localeCompare(b, "pt-BR"));
   const servicosOrdenados = [...(servicos || [])].sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
@@ -654,10 +812,21 @@ export function linhasPlanilhaObservatorio(concorrentes, meusLocais, servicos, n
       if (calc.status !== "ok") continue;
       const obs = ultimoPrecoPorConcorrente(daCidade, s.id);
       if (obs.length === 0) continue;
-      const pos = posicaoNaConcorrencia(calc.preco, obs.map((o) => o.valor));
+      const pos = posicaoNaConcorrencia(
+        calc.preco,
+        obs.map((o) => o.valor),
+      );
       abaComparacao.push([
-        cidade, s.nome, centavos(calc.preco), centavos(pisoDoServico(s, nd)), obs.length,
-        centavos(pos.min), centavos(pos.med), centavos(pos.max), Math.round(pos.difPct * 10) / 10, pos.texto,
+        cidade,
+        s.nome,
+        centavos(calc.preco),
+        centavos(pisoDoServico(s, nd)),
+        obs.length,
+        centavos(pos.min),
+        centavos(pos.med),
+        centavos(pos.max),
+        Math.round(pos.difPct * 10) / 10,
+        pos.texto,
         obs.filter((o) => diasDesde(o.data, hoje) > DIAS_PRECO_ANTIGO).length,
       ]);
     }

@@ -8,19 +8,34 @@
 /* Nenhum ponto é inventado: só aparecem o local do próprio negócio e os    */
 /* concorrentes que o usuário marcou tocando no mapa.                       */
 /* ======================================================================= */
-import React, { useEffect, useRef } from "react";
+
 import L from "leaflet";
+import { useEffect, useRef } from "react";
 import "leaflet/dist/leaflet.css";
 
 const ATRIBUICAO = '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>';
 
 function prefereMenosMovimento() {
-  try { return window.matchMedia("(prefers-reduced-motion: reduce)").matches; } catch { return false; }
+  try {
+    return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  } catch {
+    return false;
+  }
 }
 
 export default function MapaConcorrencia({
-  t, escuro, centro, zoom, concorrentes, meuLocal, raioKm, selecionadoId,
-  marcando, onMarcar, onSelecionar, corDoTipo,
+  t,
+  escuro,
+  centro,
+  zoom,
+  concorrentes,
+  meuLocal,
+  raioKm,
+  selecionadoId,
+  marcando,
+  onMarcar,
+  onSelecionar,
+  corDoTipo,
 }) {
   const divRef = useRef(null);
   const mapaRef = useRef(null);
@@ -32,8 +47,7 @@ export default function MapaConcorrencia({
 
   // Cria o mapa uma vez só.
   useEffect(() => {
-    const mapa = L.map(divRef.current, { zoomControl: true, attributionControl: true })
-      .setView(centro, zoom);
+    const mapa = L.map(divRef.current, { zoomControl: true, attributionControl: true }).setView(centro, zoom);
     L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: ATRIBUICAO }).addTo(mapa);
     mapa.attributionControl.setPrefix(false);
     camadaRef.current = L.layerGroup().addTo(mapa);
@@ -44,7 +58,11 @@ export default function MapaConcorrencia({
     // O cartão pode mudar de largura (giro do celular, painel lateral): reajusta o mapa.
     const ro = new ResizeObserver(() => mapa.invalidateSize());
     ro.observe(divRef.current);
-    return () => { ro.disconnect(); mapa.remove(); mapaRef.current = null; };
+    return () => {
+      ro.disconnect();
+      mapa.remove();
+      mapaRef.current = null;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -68,7 +86,12 @@ export default function MapaConcorrencia({
     camada.clearLayers();
     if (meuLocal && raioKm) {
       L.circle([meuLocal.lat, meuLocal.lng], {
-        radius: raioKm * 1000, color: t.primary, weight: 1.5, dashArray: "6 6", fillColor: t.primary, fillOpacity: 0.06,
+        radius: raioKm * 1000,
+        color: t.primary,
+        weight: 1.5,
+        dashArray: "6 6",
+        fillColor: t.primary,
+        fillOpacity: 0.06,
         interactive: false,
       }).addTo(camada);
     }
@@ -76,16 +99,27 @@ export default function MapaConcorrencia({
       if (c.lat == null || c.lng == null) return;
       const selecionado = c.id === selecionadoId;
       const m = L.circleMarker([c.lat, c.lng], {
-        radius: selecionado ? 10 : 7, color: escuro ? "#0F172A" : "#FFFFFF", weight: 2,
-        fillColor: corDoTipo(c.tipo), fillOpacity: c.foraDoRaio ? 0.35 : 0.95, opacity: c.foraDoRaio ? 0.5 : 1,
+        radius: selecionado ? 10 : 7,
+        color: escuro ? "#0F172A" : "#FFFFFF",
+        weight: 2,
+        fillColor: corDoTipo(c.tipo),
+        fillOpacity: c.foraDoRaio ? 0.35 : 0.95,
+        opacity: c.foraDoRaio ? 0.5 : 1,
       });
       m.bindTooltip(c.nome || "Concorrente", { direction: "top", offset: [0, -6] });
-      m.on("click", (e) => { L.DomEvent.stopPropagation(e); if (!marcandoRef.current) onSelecionar?.(c.id); });
+      m.on("click", (e) => {
+        L.DomEvent.stopPropagation(e);
+        if (!marcandoRef.current) onSelecionar?.(c.id);
+      });
       m.addTo(camada);
     });
     if (meuLocal) {
       const m = L.circleMarker([meuLocal.lat, meuLocal.lng], {
-        radius: 9, color: escuro ? "#F5F7FA" : "#0F172A", weight: 3, fillColor: t.warning, fillOpacity: 1,
+        radius: 9,
+        color: escuro ? "#F5F7FA" : "#0F172A",
+        weight: 3,
+        fillColor: t.warning,
+        fillOpacity: 1,
       });
       m.bindTooltip("Meu negócio", { direction: "top", offset: [0, -8] });
       m.addTo(camada);

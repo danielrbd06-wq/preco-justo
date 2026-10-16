@@ -1,5 +1,5 @@
-import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import { defineConfig } from "vite";
 import { viteSingleFile } from "vite-plugin-singlefile";
 
 // Build de arquivo único (app.html) — para apresentação/teste local sem servidor.
@@ -8,7 +8,9 @@ import { viteSingleFile } from "vite-plugin-singlefile";
 // vazia do registro, que nunca avisa nada.
 const semServiceWorker = {
   name: "sem-service-worker",
-  resolveId(id) { return id === "virtual:pwa-register/react" ? "\0sem-sw" : null; },
+  resolveId(id) {
+    return id === "virtual:pwa-register/react" ? "\0sem-sw" : null;
+  },
   load(id) {
     if (id !== "\0sem-sw") return null;
     return "export function useRegisterSW() { return { needRefresh: [false, () => {}], offlineReady: [false, () => {}], updateServiceWorker: () => {} }; }";
