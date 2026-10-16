@@ -57,3 +57,16 @@ export function lerCopia(texto) {
   if (Object.keys(dados).length === 0) return { ok: false, erro: "A cópia não tem nenhum dado para restaurar." };
   return { ok: true, dados, resumo: resumirCopia(dados), criadaEm: obj.criadaEm || null, versaoApp: obj.versaoApp || null };
 }
+
+/* Lembrete depois de salvar o fechamento do mês (Bloco 13): diz quando foi a */
+/* última cópia baixada. Datas comparadas pelo dia do calendário local.        */
+export function textoUltimaCopia(iso, agora = new Date()) {
+  const data = iso ? new Date(iso) : null;
+  if (!data || Number.isNaN(data.getTime())) return "Você ainda não baixou nenhuma cópia.";
+  const dia = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const dias = Math.round((dia(agora) - dia(data)) / 86400000);
+  const dataBR = `${pad2(data.getDate())}/${pad2(data.getMonth() + 1)}/${data.getFullYear()}`;
+  if (dias <= 0) return "Sua última cópia é de hoje, mas não tem este fechamento.";
+  if (dias === 1) return `Sua última cópia é de ontem (${dataBR}).`;
+  return `Sua última cópia é de ${dataBR}, há ${dias} dias.`;
+}

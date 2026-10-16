@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { montarCopia, lerCopia, nomeArquivoCopia, resumirCopia } from "./copiaSeguranca.js";
+import { montarCopia, lerCopia, nomeArquivoCopia, resumirCopia, textoUltimaCopia } from "./copiaSeguranca.js";
 
 const dados = {
   "negocio:config": JSON.stringify({ proLabore: "2200" }),
@@ -44,5 +44,19 @@ describe("cópia de segurança", () => {
     const r = lerCopia(texto);
     expect(r.ok).toBe(true);
     expect(Object.keys(r.dados).sort()).toEqual(Object.keys(dados).sort());
+  });
+});
+
+describe("lembrete de cópia depois do fechamento", () => {
+  const agora = new Date(2026, 9, 16, 18, 30);
+  it.each([
+    [null, "Você ainda não baixou nenhuma cópia."],
+    ["", "Você ainda não baixou nenhuma cópia."],
+    ["não é data", "Você ainda não baixou nenhuma cópia."],
+    [new Date(2026, 9, 16, 8, 0).toISOString(), "Sua última cópia é de hoje, mas não tem este fechamento."],
+    [new Date(2026, 9, 15, 23, 50).toISOString(), "Sua última cópia é de ontem (15/10/2026)."],
+    [new Date(2026, 8, 30, 12, 0).toISOString(), "Sua última cópia é de 30/09/2026, há 16 dias."],
+  ])("última cópia %s", (iso, texto) => {
+    expect(textoUltimaCopia(iso, agora)).toBe(texto);
   });
 });
