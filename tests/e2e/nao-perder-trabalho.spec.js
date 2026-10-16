@@ -78,3 +78,90 @@ test("Cópia de segurança: baixar, apagar tudo e restaurar no primeiro acesso",
   await irPara(page, "Painel");
   await expect(page.getByText(/R\$\s8\.998,96/).filter({ visible: true }).first()).toBeVisible();
 });
+
+// Bloco 13: rascunho nos formulários do Estoque e do Observatório.
+test("Estoque: produto novo e movimentação pela metade voltam depois de trocar de aba", async ({ page }) => {
+  await primeiroAcesso(page);
+  await irPara(page, "Estoque");
+  await page.getByRole("button", { name: "novo produto" }).click();
+  const nome = page.getByPlaceholder("ex: Pomada modeladora");
+  await nome.fill("Pomada teste");
+  await irPara(page, "FAQ");
+  await irPara(page, "Estoque");
+  await expect(page.getByText("Recuperamos o que você estava digitando")).toBeVisible();
+  await expect(nome).toHaveValue("Pomada teste");
+  const preco = page.locator("xpath=//*[normalize-space(text())='Preço de venda']/following::input[1]");
+  await preco.click();
+  await preco.press("Control+a");
+  await preco.pressSequentially("30");
+  await page.getByRole("button", { name: "Salvar produto" }).click();
+  await expect(page.getByText("Recuperamos o que você estava digitando")).toBeHidden();
+
+  // Movimentação
+  await page.getByRole("button", { name: /Movimentar/ }).first().click();
+  const observacao = page.getByPlaceholder("ex: NF 1234, fornecedor X");
+  await observacao.fill("NF 99");
+  await page.reload();
+  await page.waitForTimeout(1000); // o app termina de carregar e abre a aba inicial
+  await irPara(page, "Estoque");
+  await expect(observacao).toHaveValue("NF 99");
+  await page.getByRole("button", { name: "Cancelar" }).click();
+  await page.reload();
+  await page.waitForTimeout(1000);
+  await irPara(page, "Estoque");
+  await page.waitForTimeout(500);
+  await expect(observacao).toHaveCount(0);
+});
+
+test("Observatório: concorrente e preço pela metade voltam depois de trocar de aba", async ({ page }) => {
+  await primeiroAcesso(page);
+  await irPara(page, /Observat/);
+  await page.getByRole("button", { name: "Adicionar concorrente sem marcar no mapa" }).click();
+  const nome = page.getByPlaceholder("ex.: Barbearia do Zé");
+  await nome.fill("Barbearia Rascunho");
+  await irPara(page, "Painel");
+  await irPara(page, /Observat/);
+  await expect(page.getByText("Recuperamos o que você estava digitando")).toBeVisible();
+  await expect(nome).toHaveValue("Barbearia Rascunho");
+  await page.getByRole("button", { name: "Salvar concorrente" }).click();
+
+  await page.getByRole("button", { name: "anotar preço" }).click();
+  const preco = page.locator("xpath=//span[normalize-space(.)='Preço cobrado']/ancestor::label[1]//input");
+  await preco.click();
+  await preco.pressSequentially("27");
+  await preco.blur();
+  await irPara(page, "Painel");
+  await irPara(page, /Observat/);
+  await expect(page.getByText("Recuperamos o que você estava digitando")).toBeVisible();
+  await expect(preco).toHaveValue(/27,00/);
+  await page.getByRole("button", { name: "Salvar preço" }).click();
+  await expect(page.getByText("Recuperamos o que você estava digitando")).toBeHidden();
+});
+
+test("Fechamento do mês: depois de salvar, lembra de baixar a cópia de segurança", async ({ page }) => {
+  await primeiroAcesso(page);
+  await irPara(page, "Painel");
+  await abrirSecao(page, "Fechamento mensal");
+  await page.getByRole("button", { name: "Fechar agora" }).click();
+  const detalhar = page.getByRole("button", { name: /^detalhar por serviço/ });
+  if (await detalhar.count()) {
+    const faturamento = page.locator("xpath=//span[starts-with(normalize-space(.),'Faturamento bruto do mês')]/ancestor::label[1]//input");
+    await faturamento.click();
+    await faturamento.pressSequentially("9000");
+    const atendimentos = page.locator("xpath=//span[starts-with(normalize-space(.),'Atendimentos realizados no mês')]/ancestor::label[1]//input");
+    await atendimentos.fill("150");
+  } else {
+    const quantidades = page.locator("xpath=//*[normalize-space(text())='Quantidade']/following::input[1]");
+    await quantidades.first().fill("100");
+  }
+  await page.getByRole("button", { name: "Salvar fechamento" }).click();
+  await expect(page.getByText("Fechamento salvo. Que tal guardar uma cópia?")).toBeVisible();
+  await expect(page.getByText("Você ainda não baixou nenhuma cópia.")).toBeVisible();
+  const [download] = await Promise.all([
+    page.waitForEvent("download"),
+    page.getByRole("button", { name: "Baixar cópia agora" }).click(),
+  ]);
+  expect(download.suggestedFilename()).toMatch(/^preco-justo-copia-\d{4}-\d{2}-\d{2}\.json$/);
+  await expect(page.getByRole("button", { name: "Cópia baixada" })).toBeVisible();
+  await expect(page.getByText("Fechamento salvo. Que tal guardar uma cópia?")).toBeHidden({ timeout: 5000 });
+});

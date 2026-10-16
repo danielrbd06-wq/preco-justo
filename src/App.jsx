@@ -14,7 +14,7 @@ import {
 import { createPortal } from "react-dom";
 import * as XLSX from "xlsx";
 import { useRegisterSW } from "virtual:pwa-register/react";
-import { montarCopia, lerCopia, nomeArquivoCopia } from "./copiaSeguranca.js";
+import { montarCopia, lerCopia, nomeArquivoCopia, textoUltimaCopia } from "./copiaSeguranca.js";
 import {
   VERSAO_TERMOS, DATA_TERMOS, CHAVE_ACEITE, montarAceite, lerAceite, chavesDoApp, RESUMO_ACEITE, DOCUMENTOS_LEGAIS,
 } from "./termos.js";
@@ -732,7 +732,7 @@ function useToast() {
 /* ======================================================================= */
 /* App                                                                      */
 /* ======================================================================= */
-const VERSAO_APP = "v7.19";
+const VERSAO_APP = "v7.20";
 const CHAVE_TEMA = "preco-justo:tema";
 
 /* Rede de segurança: se qualquer aba travar por um motivo que eu não       */
@@ -1901,6 +1901,90 @@ function IndicadorAutoSalvar({ status }) {
     return <span className="inline-flex items-center gap-1 text-[11px]" style={{ color: t.textMuted }}>salvando…</span>;
   }
   return <span className="inline-flex items-center gap-1 text-[11px]" style={{ color: t.textMuted }}><CheckCircle2 size={12} style={{ color: t.successText }} /> salvo</span>;
+}
+
+/* Rascunho de formulário com botão "Salvar" (Bloco 9; virou hook no Bloco 13). */
+/* Ao montar, lê o rascunho guardado em `chave` e entrega a `aoRecuperar`, que  */
+/* aplica os valores (ou devolve false se o rascunho não é deste formulário).   */
+/* A cada mudança de `estado`, grava; se o estado volta ao inicial, apaga.      */
+/* Salvar e cancelar devem chamar `descartar`.                                  */
+function useRascunho(chave, estado, { aoRecuperar } = {}) {
+  const [recuperado, setRecuperado] = useState(false);
+  const estadoStr = JSON.stringify(estado);
+  const inicialRef = useRef(estadoStr);
+  const lidoRef = useRef(false);
+  const alteradoRef = useRef(false); // a pessoa já digitou antes de a leitura terminar
+  const aoRecuperarRef = useRef(aoRecuperar);
+  aoRecuperarRef.current = aoRecuperar;
+  useEffect(() => {
+    let vivo = true;
+    lerRascunho(chave).then((d) => {
+      if (!vivo) return;
+      lidoRef.current = true;
+      // O que foi digitado agora vale mais que um rascunho antigo.
+      if (d && !alteradoRef.current && aoRecuperarRef.current?.(d) !== false) setRecuperado(true);
+    });
+    return () => { vivo = false; };
+  }, [chave]);
+  useEffect(() => {
+    if (estadoStr === inicialRef.current) {
+      if (lidoRef.current) { excluirComFallback(chave); setRecuperado(false); }
+      return;
+    }
+    alteradoRef.current = true;
+    salvarComFallback(chave, estadoStr);
+  }, [chave, estadoStr]);
+  const descartar = useCallback(() => { excluirComFallback(chave); setRecuperado(false); }, [chave]);
+  return { recuperado, descartar };
+}
+
+function AvisoRascunhoRecuperado({ children = "Recuperamos o que você estava digitando. Confira e salve." }) {
+  const t = useT();
+  return (
+    <div className="pop-in flex items-start gap-1.5 rounded-xl p-2.5 text-xs" role="status" style={{ background: t.successSoft, color: t.successText }}>
+      <CheckCircle2 size={14} className="mt-0.5 shrink-0" />
+      <span>{children}</span>
+    </div>
+  );
+}
+
+/* Lembrete de cópia de segurança depois de salvar o fechamento do mês (Bloco 13). */
+function LembreteCopia({ onFechar }) {
+  const t = useT();
+  const [ultima, setUltima] = useState(undefined);
+  const [baixando, setBaixando] = useState(false);
+  const [baixada, setBaixada] = useState(false);
+  useEffect(() => { lerComFallback("app:ultima-copia").then((v) => setUltima(v || null)); }, []);
+  const baixar = async () => {
+    setBaixando(true);
+    await baixarCopiaSeguranca();
+    setBaixando(false); setBaixada(true);
+    setTimeout(onFechar, 2200);
+  };
+  return (
+    <div role="status" className="pop-in rounded-xl p-3 space-y-2 text-xs" style={{ background: t.primarySoft, color: t.text }}>
+      <p className="font-semibold flex items-center gap-1.5" style={{ color: t.primaryText }}>
+        <ShieldCheck size={14} className="shrink-0" /> Fechamento salvo. Que tal guardar uma cópia?
+      </p>
+      <p>
+        Se o aparelho for limpo ou trocado, é a cópia de segurança que traz seus fechamentos de volta.
+        {ultima !== undefined && ` ${textoUltimaCopia(ultima)}`}
+      </p>
+      <div className="flex flex-wrap gap-2">
+        <button type="button" onClick={baixar} disabled={baixando || baixada}
+          className="btn-press inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold"
+          style={{ background: t.primaryText, color: t.onPrimary, opacity: baixando ? 0.85 : 1 }}>
+          {baixando ? <Girando /> : baixada ? <CheckCircle2 size={14} className="pop-in" /> : <Download size={14} />}
+          {baixando ? "Baixando…" : baixada ? "Cópia baixada" : "Baixar cópia agora"}
+        </button>
+        {!baixada && (
+          <button type="button" onClick={onFechar} disabled={baixando} className="btn-press rounded-lg px-3 py-2 text-xs font-medium" style={{ color: t.textMuted }}>
+            Agora não
+          </button>
+        )}
+      </div>
+    </div>
+  );
 }
 
 function CardSelecao({ ativo, onClick, icon: Icon, titulo, descricao }) {
@@ -5499,12 +5583,7 @@ function FormularioFechamento({ mes, nd, servicos, profissionais, registroExiste
   return (
     <div className="rounded-xl p-3 space-y-3 pop-in" style={{ background: t.surface, border: `1px solid ${t.border}` }}>
       <p className="text-xs font-semibold" style={{ color: t.text }}>Fechamento de {labelMes(mes)}</p>
-      {rascunhoRecuperado && (
-        <div className="pop-in flex items-start gap-1.5 rounded-xl p-2.5 text-xs" role="status" style={{ background: t.successSoft, color: t.successText }}>
-          <CheckCircle2 size={14} className="mt-0.5 shrink-0" />
-          <span>Recuperamos o que você tinha digitado neste fechamento. Confira e salve.</span>
-        </div>
-      )}
+      {rascunhoRecuperado && <AvisoRascunhoRecuperado>Recuperamos o que você tinha digitado neste fechamento. Confira e salve.</AvisoRascunhoRecuperado>}
 
       {mostrarPorServico ? (
         <div className="grid grid-cols-2 gap-2">
@@ -5665,6 +5744,7 @@ function FechamentoMensal({ nd, servicos, fechamentos, onSalvar, onRemover, onCa
   const [aberto, setAberto] = useState(false);
   const [editando, setEditando] = useState(null);
   const [verDRE, setVerDRE] = useState(null);
+  const [lembrarCopia, setLembrarCopia] = useState(false);
 
   const chaveAtual = chaveMes(new Date());
   const fechamentoAtual = fechamentos?.find((f) => f.mes === chaveAtual);
@@ -5685,6 +5765,7 @@ function FechamentoMensal({ nd, servicos, fechamentos, onSalvar, onRemover, onCa
   const salvar = (registro) => {
     onSalvar(registro);
     setEditando(null);
+    setLembrarCopia(true);
   };
 
   const remover = (mes) => onRemover(mes);
@@ -5765,6 +5846,7 @@ function FechamentoMensal({ nd, servicos, fechamentos, onSalvar, onRemover, onCa
               onSalvar={salvar} onCancelar={() => setEditando(null)}
             />
           )}
+          {lembrarCopia && !editando && <LembreteCopia onFechar={() => setLembrarCopia(false)} />}
 
           {fechamentos.filter((f) => f.mes !== chaveAtual).length > 0 && (
             <div>
@@ -6545,7 +6627,10 @@ function ComparacaoServico({ s, seu, piso, observacoes }) {
 }
 
 /* Formulário de um concorrente (novo ou edição). */
-function FormularioConcorrente({ rascunho, setRascunho, onSalvar, onCancelar }) {
+const CHAVE_RASCUNHO_CONCORRENTE = "rascunho:observatorio:concorrente";
+const CHAVE_RASCUNHO_PRECO = "rascunho:observatorio:preco";
+
+function FormularioConcorrente({ rascunho, setRascunho, onSalvar, onCancelar, recuperado }) {
   const t = useT();
   const campoStyle = { background: t.surface, border: `1px solid ${t.border}`, color: t.text };
   const valido = (rascunho.nome || "").trim().length > 0;
@@ -6554,6 +6639,7 @@ function FormularioConcorrente({ rascunho, setRascunho, onSalvar, onCancelar }) 
       <p className="text-xs font-semibold" style={{ color: t.primaryText }}>
         {rascunho.id ? "Editar concorrente" : rascunho.lat != null ? "Novo concorrente no ponto marcado" : "Novo concorrente (sem posição no mapa)"}
       </p>
+      {recuperado && <AvisoRascunhoRecuperado />}
       <Campo label="Nome">
         <input className={CAMPO} style={campoStyle} value={rascunho.nome || ""} placeholder="ex.: Barbearia do Zé" autoFocus
           onChange={(e) => setRascunho({ ...rascunho, nome: e.target.value })} />
@@ -6584,7 +6670,7 @@ function FormularioConcorrente({ rascunho, setRascunho, onSalvar, onCancelar }) 
 }
 
 /* Formulário para anotar um preço visto num concorrente. */
-function FormularioPreco({ servicos, onSalvar, onCancelar }) {
+function FormularioPreco({ concorrenteId, servicos, onSalvar, onCancelar }) {
   const t = useT();
   const campoStyle = { background: t.surface, border: `1px solid ${t.border}`, color: t.text };
   const [servicoId, setServicoId] = useState(servicos[0]?.id || "outro");
@@ -6592,11 +6678,21 @@ function FormularioPreco({ servicos, onSalvar, onCancelar }) {
   const [valor, setValor] = useState("");
   const [data, setData] = useState(hojeISO());
   const [fonte, setFonte] = useState("local");
+  // Rascunho (Bloco 13): um preço sendo anotado por vez.
+  const { recuperado, descartar } = useRascunho(CHAVE_RASCUNHO_PRECO, { concorrenteId, servicoId, servicoNome, valor, data, fonte }, {
+    aoRecuperar: (d) => {
+      if (d.concorrenteId !== concorrenteId) return false;
+      setServicoId(d.servicoId === "outro" || servicos.some((s) => s.id === d.servicoId) ? d.servicoId : servicos[0]?.id || "outro");
+      setServicoNome(d.servicoNome ?? ""); setValor(d.valor ?? ""); setData(d.data || hojeISO()); setFonte(d.fonte || "local");
+      return true;
+    },
+  });
   const nomeFinal = servicoId === "outro" ? servicoNome.trim() : servicos.find((s) => s.id === servicoId)?.nome || "";
   const dataValida = data && data <= hojeISO();
   const valido = N(valor) > 0 && nomeFinal && dataValida;
   return (
     <div className="pop-in rounded-xl p-3 space-y-2.5 mt-2" style={{ background: t.surface, border: `1px solid ${t.border}` }}>
+      {recuperado && <AvisoRascunhoRecuperado />}
       <Campo label="Serviço" hint={servicoId !== "outro" ? "Ligado ao seu serviço de mesmo nome: entra na comparação." : "Sem ligação com um serviço seu: fica anotado, mas não entra na comparação."}>
         <select className={CAMPO} style={campoStyle} value={servicoId} onChange={(e) => setServicoId(e.target.value)}>
           {servicos.map((s) => <option key={s.id} value={s.id}>{s.nome}</option>)}
@@ -6624,12 +6720,12 @@ function FormularioPreco({ servicos, onSalvar, onCancelar }) {
       {!dataValida && <p className="text-[11px]" style={{ color: t.danger }}>A data não pode ser no futuro.</p>}
       <div className="flex gap-2 flex-wrap">
         <button type="button" disabled={!valido}
-          onClick={() => onSalvar({ id: uid(), servicoId: servicoId === "outro" ? null : servicoId, servicoNome: nomeFinal, valor: N(valor), data, fonte })}
+          onClick={() => { descartar(); onSalvar({ id: uid(), servicoId: servicoId === "outro" ? null : servicoId, servicoNome: nomeFinal, valor: N(valor), data, fonte }); }}
           className="btn-press touch-target rounded-lg px-3 py-2 text-xs font-semibold"
           style={{ background: valido ? t.primaryText : t.border, color: valido ? t.onPrimary : t.textMuted, cursor: valido ? "pointer" : "not-allowed" }}>
           Salvar preço
         </button>
-        <button type="button" onClick={onCancelar} className="btn-press touch-target rounded-lg px-3 py-2 text-xs font-medium" style={{ color: t.textMuted }}>
+        <button type="button" onClick={() => { descartar(); onCancelar(); }} className="btn-press touch-target rounded-lg px-3 py-2 text-xs font-medium" style={{ color: t.textMuted }}>
           Cancelar
         </button>
       </div>
@@ -6638,9 +6734,9 @@ function FormularioPreco({ servicos, onSalvar, onCancelar }) {
 }
 
 /* Um concorrente anotado, com os preços dele. */
-function ItemConcorrente({ c, distancia, servicos, selecionado, onSelecionar, onAtualizar, onExcluir, onEditar, onMover }) {
+function ItemConcorrente({ c, distancia, servicos, selecionado, onSelecionar, onAtualizar, onExcluir, onEditar, onMover, anotandoInicial = false }) {
   const t = useT();
-  const [anotando, setAnotando] = useState(false);
+  const [anotando, setAnotando] = useState(anotandoInicial);
   const [confirmando, setConfirmando] = useState(false);
   const ref = useRef(null);
   useEffect(() => {
@@ -6685,7 +6781,7 @@ function ItemConcorrente({ c, distancia, servicos, selecionado, onSelecionar, on
             </ul>
           )}
           {anotando ? (
-            <FormularioPreco servicos={servicos}
+            <FormularioPreco concorrenteId={c.id} servicos={servicos}
               onCancelar={() => setAnotando(false)}
               onSalvar={(preco) => { onAtualizar({ ...c, precos: [...(c.precos || []), preco] }); setAnotando(false); }} />
           ) : (
@@ -6735,17 +6831,30 @@ function Observatorio({ servicos, nd, cidadePerfil }) {
   const [marcando, setMarcando] = useState(null); // { tipo: 'meu-local' } | { tipo: 'novo', base } | { tipo: 'mover', id }
   const [rascunho, setRascunho] = useState(null);
   const [selecionadoId, setSelecionadoId] = useState(null);
+  const [precoPendenteId, setPrecoPendenteId] = useState(null); // concorrente com preço sendo anotado (rascunho)
+  // Rascunho do concorrente sendo cadastrado ou editado (Bloco 13).
+  const { recuperado: concorrenteRecuperado } = useRascunho(CHAVE_RASCUNHO_CONCORRENTE, rascunho ? { cidade, rascunho } : null, {
+    aoRecuperar: (d) => {
+      if (!d?.rascunho) return false;
+      if (CIDADES_OBSERVATORIO.some((c) => c.id === d.cidade)) setCidade(d.cidade);
+      setRascunho(d.rascunho);
+      return true;
+    },
+  });
   const [online, setOnline] = useState(() => (typeof navigator === "undefined" ? true : navigator.onLine !== false));
   const { show, node: toastNode } = useToast();
 
   useEffect(() => {
     let vivo = true;
-    Promise.all([lerComFallback("observatorio:concorrentes"), lerComFallback("observatorio:meus-locais")]).then(([c, l]) => {
+    Promise.all([lerComFallback("observatorio:concorrentes"), lerComFallback("observatorio:meus-locais"), lerRascunho(CHAVE_RASCUNHO_PRECO)]).then(([c, l, rp]) => {
       if (!vivo) return;
       const lista = lerJSON(c, []);
       const locais = lerJSON(l, {});
       setConcorrentes(Array.isArray(lista) ? lista : []);
       setMeusLocais(locais && typeof locais === "object" ? locais : {});
+      // Havia um preço sendo anotado? Abre o concorrente com o formulário (Bloco 13).
+      const comPreco = Array.isArray(lista) && rp?.concorrenteId ? lista.find((x) => x.id === rp.concorrenteId) : null;
+      if (comPreco) { setCidade(comPreco.cidade); setSelecionadoId(comPreco.id); setPrecoPendenteId(comPreco.id); }
       setCarregado(true);
     });
     const on = () => setOnline(true);
@@ -6930,7 +7039,7 @@ function Observatorio({ servicos, nd, cidadePerfil }) {
           </div>
         )}
         {rascunho && (
-          <FormularioConcorrente rascunho={rascunho} setRascunho={setRascunho} onSalvar={salvarRascunho} onCancelar={() => setRascunho(null)} />
+          <FormularioConcorrente rascunho={rascunho} setRascunho={setRascunho} onSalvar={salvarRascunho} onCancelar={() => setRascunho(null)} recuperado={concorrenteRecuperado} />
         )}
         {!rascunho && !marcando && (
           <button type="button" onClick={() => setRascunho({ tipo: "Salão" })} className="btn-press text-[11px] underline underline-offset-2" style={{ color: t.textMuted }}>
@@ -6996,7 +7105,7 @@ function Observatorio({ servicos, nd, cidadePerfil }) {
           <div className="space-y-2">
             {daCidade.map((c) => (
               <ItemConcorrente key={c.id} c={c} distancia={c.distancia} servicos={servicos || []}
-                selecionado={selecionadoId === c.id}
+                selecionado={selecionadoId === c.id} anotandoInicial={precoPendenteId === c.id}
                 onSelecionar={() => setSelecionadoId(selecionadoId === c.id ? null : c.id)}
                 onAtualizar={(novo) => salvarConcorrentes(concorrentes.map((x) => (x.id === novo.id ? { ...x, precos: novo.precos } : x)))}
                 onExcluir={() => { salvarConcorrentes(concorrentes.filter((x) => x.id !== c.id)); setSelecionadoId(null); show("Concorrente excluído."); }}
@@ -7828,6 +7937,9 @@ function CardResumoEstoque({ icon: Icon, label, valor, sub, cor }) {
   );
 }
 
+const PREFIXO_RASCUNHO_PRODUTO = "rascunho:estoque:produto:";
+const PREFIXO_RASCUNHO_MOVIMENTO = "rascunho:estoque:movimento:";
+
 function FormularioProdutoRevenda({ produtoExistente, onSalvar, onCancelar }) {
   const t = useT();
   const [nome, setNome] = useState(produtoExistente?.nome ?? "");
@@ -7836,12 +7948,22 @@ function FormularioProdutoRevenda({ produtoExistente, onSalvar, onCancelar }) {
   const [precoVenda, setPrecoVenda] = useState(produtoExistente?.precoVenda ?? "");
   const [estoqueMinimo, setEstoqueMinimo] = useState(produtoExistente?.estoqueMinimo ?? "");
   const [saldoInicial, setSaldoInicial] = useState(String(produtoExistente?.saldoAtual ?? "0"));
+  // Rascunho (Bloco 13): produto novo ou edição de um produto.
+  const { recuperado, descartar } = useRascunho(PREFIXO_RASCUNHO_PRODUTO + (produtoExistente?.id || "novo"),
+    { nome, sku, custoAquisicao, precoVenda, estoqueMinimo, saldoInicial }, {
+      aoRecuperar: (d) => {
+        setNome(d.nome ?? ""); setSku(d.sku ?? ""); setCustoAquisicao(d.custoAquisicao ?? ""); setPrecoVenda(d.precoVenda ?? "");
+        setEstoqueMinimo(d.estoqueMinimo ?? ""); setSaldoInicial(d.saldoInicial ?? "0");
+        return true;
+      },
+    });
 
   const margemUnitaria = N(precoVenda) - N(custoAquisicao);
   const margemPct = N(precoVenda) > 0 ? (margemUnitaria / N(precoVenda)) * 100 : 0;
   const valido = nome.trim().length > 0 && N(precoVenda) > 0;
 
   const salvar = () => {
+    descartar();
     onSalvar({
       id: produtoExistente?.id || uid(),
       nome: nome.trim(), sku: sku.trim(), custoAquisicao: N(custoAquisicao), precoVenda: N(precoVenda),
@@ -7852,6 +7974,7 @@ function FormularioProdutoRevenda({ produtoExistente, onSalvar, onCancelar }) {
 
   return (
     <div className="rounded-xl p-3 space-y-3 pop-in" style={{ background: t.surfaceAlt }}>
+      {recuperado && <AvisoRascunhoRecuperado />}
       <div className="grid grid-cols-2 gap-2">
         <Campo label="Nome do produto">
           <input className={CAMPO} style={{ background: t.surface, border: `1px solid ${t.border}`, color: t.text }}
@@ -7890,7 +8013,7 @@ function FormularioProdutoRevenda({ produtoExistente, onSalvar, onCancelar }) {
           style={{ background: valido ? t.success : t.surface, color: valido ? t.onSuccess : t.textMuted, opacity: valido ? 1 : 0.6 }}>
           <Save size={12} /> Salvar produto
         </button>
-        <button onClick={onCancelar} className="btn-press rounded-lg px-3 py-2 text-xs font-semibold" style={{ background: t.surface, color: t.textMuted }}>
+        <button onClick={() => { descartar(); onCancelar(); }} className="btn-press rounded-lg px-3 py-2 text-xs font-semibold" style={{ background: t.surface, color: t.textMuted }}>
           Cancelar
         </button>
       </div>
@@ -7904,11 +8027,19 @@ function FormularioMovimento({ produto, onSalvar, onCancelar }) {
   const [quantidade, setQuantidade] = useState("");
   const [custoUnitario, setCustoUnitario] = useState(String(produto.custoAquisicao || ""));
   const [observacao, setObservacao] = useState("");
+  // Rascunho (Bloco 13): movimentação de um produto.
+  const { recuperado, descartar } = useRascunho(PREFIXO_RASCUNHO_MOVIMENTO + produto.id, { tipo, quantidade, custoUnitario, observacao }, {
+    aoRecuperar: (d) => {
+      setTipoMov(d.tipo === "saida" ? "saida" : "entrada"); setQuantidade(d.quantidade ?? ""); setCustoUnitario(d.custoUnitario ?? ""); setObservacao(d.observacao ?? "");
+      return true;
+    },
+  });
 
   const valido = N(quantidade) > 0;
   const excedeSaldo = tipo === "saida" && N(quantidade) > produto.saldoAtual;
 
   const salvar = () => {
+    descartar();
     onSalvar({
       id: uid(), produtoId: produto.id, tipo, quantidade: N(quantidade),
       custoUnitario: tipo === "entrada" ? N(custoUnitario) : null,
@@ -7920,6 +8051,7 @@ function FormularioMovimento({ produto, onSalvar, onCancelar }) {
   return (
     <div className="rounded-xl p-3 space-y-3 pop-in" style={{ background: t.surfaceAlt }}>
       <p className="text-xs font-semibold" style={{ color: t.text }}>Movimentar: {produto.nome}</p>
+      {recuperado && <AvisoRascunhoRecuperado />}
       <div className="flex gap-1 p-1 rounded-lg w-fit" style={{ background: t.surface }}>
         <button onClick={() => setTipoMov("entrada")} className="btn-press rounded-md px-3 py-1.5 text-xs font-semibold"
           style={{ background: tipo === "entrada" ? t.successSoft : "transparent", color: tipo === "entrada" ? t.successText : t.textMuted }}>
@@ -7955,7 +8087,7 @@ function FormularioMovimento({ produto, onSalvar, onCancelar }) {
           style={{ background: valido ? t.success : t.surface, color: valido ? t.onSuccess : t.textMuted, opacity: valido ? 1 : 0.6 }}>
           Confirmar {tipo === "entrada" ? "entrada" : "saída"}
         </button>
-        <button onClick={onCancelar} className="btn-press rounded-lg px-3 py-2 text-xs font-semibold" style={{ background: t.surface, color: t.textMuted }}>
+        <button onClick={() => { descartar(); onCancelar(); }} className="btn-press rounded-lg px-3 py-2 text-xs font-semibold" style={{ background: t.surface, color: t.textMuted }}>
           Cancelar
         </button>
       </div>
@@ -7963,10 +8095,10 @@ function FormularioMovimento({ produto, onSalvar, onCancelar }) {
   );
 }
 
-function CardProdutoRevenda({ produto, onEditar, onExcluir, onMovimentar }) {
+function CardProdutoRevenda({ produto, onEditar, onExcluir, onMovimentar, movimentandoInicial = false }) {
   const t = useT();
   const [confirmando, setConfirmando] = useState(false);
-  const [movimentando, setMovimentando] = useState(false);
+  const [movimentando, setMovimentando] = useState(movimentandoInicial);
   const status = statusEstoque(produto.saldoAtual, produto.estoqueMinimo);
   const cor = corStatusEstoque(t, status);
   const labelStatus = status === "critico" ? "ruptura" : status === "atencao" ? "atenção" : "saudável";
@@ -8127,6 +8259,7 @@ function Estoque({ negocio, onSalvarNegocio }) {
   const [movimentos, setMovimentos] = useState([]);
   const [criandoProduto, setCriandoProduto] = useState(false);
   const [editandoId, setEditandoId] = useState(null);
+  const [movimentosEmRascunho, setMovimentosEmRascunho] = useState([]);
   const { show, node: toastNode } = useToast();
 
   const carregar = useCallback(async () => {
@@ -8138,7 +8271,15 @@ function Estoque({ negocio, onSalvarNegocio }) {
           try { return v ? JSON.parse(v) : null; } catch { return null; }
         })
       );
-      setProdutos(produtosCarregados.filter(Boolean).sort((a, b) => a.nome.localeCompare(b.nome)));
+      const lista = produtosCarregados.filter(Boolean).sort((a, b) => a.nome.localeCompare(b.nome));
+      // Havia produto ou movimentação sendo digitados? Reabre o formulário (Bloco 13).
+      const rascunhos = await listarComFallback("rascunho:estoque:");
+      const produtosEmRascunho = rascunhos.filter((k) => k.startsWith(PREFIXO_RASCUNHO_PRODUTO)).map((k) => k.slice(PREFIXO_RASCUNHO_PRODUTO.length));
+      if (produtosEmRascunho.includes("novo")) setCriandoProduto(true);
+      const emEdicao = produtosEmRascunho.find((id) => id !== "novo" && lista.some((p) => p.id === id));
+      if (emEdicao) setEditandoId(emEdicao);
+      setMovimentosEmRascunho(rascunhos.filter((k) => k.startsWith(PREFIXO_RASCUNHO_MOVIMENTO)).map((k) => k.slice(PREFIXO_RASCUNHO_MOVIMENTO.length)));
+      setProdutos(lista);
     } catch { setProdutos([]); }
     try {
       const chavesM = await listarComFallback("movimento-estoque:");
@@ -8230,7 +8371,7 @@ function Estoque({ negocio, onSalvarNegocio }) {
               editandoId === p.id ? (
                 <FormularioProdutoRevenda key={p.id} produtoExistente={p} onSalvar={salvarProduto} onCancelar={() => setEditandoId(null)} />
               ) : (
-                <CardProdutoRevenda key={p.id} produto={p}
+                <CardProdutoRevenda key={p.id} produto={p} movimentandoInicial={movimentosEmRascunho.includes(p.id)}
                   onEditar={() => setEditandoId(p.id)}
                   onExcluir={() => excluirProduto(p.id, p.nome)}
                   onMovimentar={(mov) => registrarMovimento(p, mov)}
