@@ -833,3 +833,27 @@ export function linhasPlanilhaObservatorio(concorrentes, meusLocais, servicos, n
   }
   return { concorrentes: abaConcorrentes, precos: abaPrecos, comparacao: abaComparacao };
 }
+
+/* ======================================================================= */
+/* Régua única com parceiros (Bloco 16, opção C). Gráficos, sazonalidade e  */
+/* pontos de equilíbrio usam a receita do salão: valor cobrado − cota-parte */
+/* dos parceiros (Lei 12.592/2012, art. 1º-A, § 5º). Com parceiros, o app    */
+/* mostra junto o equivalente em valor cobrado dos clientes.                */
+/* ======================================================================= */
+
+/* Receita do salão num fechamento do mês. Fechamentos antigos, sem a cota  */
+/* registrada, ficam iguais ao faturamento.                                 */
+export function receitaDoSalao(fechamento) {
+  return N(fechamento?.faturamentoBruto) - N(fechamento?.cotaParteSnapshot);
+}
+
+/* Quanto um valor em receita do salão representa em valor cobrado, pela    */
+/* proporção da cota no DRE: valor × cobrado ÷ (cobrado − cota).            */
+/* Ex.: R$ 12.000 com R$ 20.000 cobrados e R$ 4.000 de cota = R$ 15.000.   */
+/* Sem parceiros devolve null (não há o que traduzir).                     */
+export function equivalenteEmValorCobrado(valorReceitaSalao, { valorCobrado, cotaParteParceiros } = {}) {
+  const cobrado = N(valorCobrado);
+  const cota = N(cotaParteParceiros);
+  if (!Number.isFinite(valorReceitaSalao) || cota <= 0 || cobrado <= cota) return null;
+  return (valorReceitaSalao * cobrado) / (cobrado - cota);
+}
