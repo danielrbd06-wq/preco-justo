@@ -43,7 +43,7 @@ Fecha #49 e #50.
 
 ### O que mudou
 #### #49: os 23 avisos do Biome, um a um
-**Corrigidos (14):**
+**Corrigidos (17):**
 - **Gráficos e listas sem chave pela posição (8):**
   - fatias da rosca do preço, pelo nome;
   - barras do ranking e pontos do gráfico de ocupação, pelo id do serviço;
@@ -52,15 +52,13 @@ Fecha #49 e #50.
   - itens das listas do FAQ, dos termos e do resumo do aceite, pelo próprio texto.
 - **Ordenação dos serviços (1):** os comparadores saíram de dentro do componente para uma constante fixa, `COMPARADORES_SERVICO`.
 - **Valores de um serviço novo (1):** o `vazio`, que guarda os valores iniciais, passou a ser memorizado com as dependências reais: segmento, comissão média e taxa média. O `rascunhoBase` também passou a declarar essa dependência.
-- **Mapa (2):**
-  - o efeito de troca de cidade agora declara latitude e longitude;
-  - o clique num ponto do mapa passou a usar uma ref, como já acontecia com o clique de marcar ponto. Isso evita usar uma versão velha da função.
-- **Rascunhos antigos (2 grupos de avisos):** sumiram com a migração da #50.
+- **Mapa (1):** o clique num ponto do mapa passou a usar uma ref, como já acontecia com o clique de marcar ponto. Isso evita usar uma versão velha da função. De quebra, o efeito de troca de cidade passou a declarar latitude e longitude.
+- **Rascunhos antigos (6):** sumiram com a migração da #50.
 
-**Justificados no código com `biome-ignore` e motivo (9 avisos, em 5 trechos):**
+**Justificados no código com `biome-ignore` e motivo (6 avisos, em 5 trechos):**
 - **Troca de aba:** é o gatilho do esqueleto de carregamento.
 - **Balão de ajuda:** a segunda passada de posicionamento depende da largura medida.
-- **Mapa:** o Leaflet é criado uma única vez, ao montar.
+- **Mapa (2 avisos):** o Leaflet é criado uma única vez, ao montar.
 - **Blocos de texto do FAQ (2):** são fixos, nunca reordenados.
 
 **Regras de volta a erro:** `useExhaustiveDependencies` e `noArrayIndexKey` voltaram a valer como erro no `biome.json`, então um caso novo derruba o CI.

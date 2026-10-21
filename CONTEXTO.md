@@ -83,7 +83,7 @@ As melhorias foram organizadas em **blocos** (os 7 da análise inicial e os segu
 | 14 | Fonte Poppins dentro do app (`@fontsource/poppins`, sem Google Fonts, no cache offline); Aviso de Privacidade v0.2 com dois terceiros e teste que barra endereço externo não declarado | ✅ Implementado (`docs/bloco-14-issue-e-pr.md`) |
 | 15 | Biome (lint e formatação) no CI, código todo formatado, 16 testes de casos-limite e piso de cobertura com ramos (calculos.js: 71,8% → 92,9% dos ramos) | ✅ Implementado (`docs/bloco-15-issue-e-pr.md`) |
 | 16 | Régua única com parceiros (opção C): Evolução, sazonalidade, anomalia e projeção na receita do salão; equivalência em valor cobrado na escada, no memorial e no Excel; linha do ponto de equilíbrio sempre visível no gráfico | ✅ Implementado (`docs/bloco-16-issue-e-pr.md`) |
-| 17 | Os 23 avisos do Biome revisados (14 corrigidos, 9 justificados) e regras de volta a erro; rascunhos do serviço novo e do fechamento com `useRascunho` | ✅ Implementado (`docs/bloco-17-issues-e-pr.md`) |
+| 17 | Os 23 avisos do Biome revisados (17 corrigidos, 6 justificados) e regras de volta a erro; rascunhos do serviço novo e do fechamento com `useRascunho` | ✅ Implementado (`docs/bloco-17-issues-e-pr.md`) |
 
 ### Esteira de qualidade (Bloco 8) — vale para toda mudança
 - **Toda conta nova ou alterada vai para `src/calculos.js`, com teste em `src/calculos.test.js`.** Os valores esperados devem ser conferidos à mão e explicados no teste. Caminhos de dado faltando ou zerado também ganham teste (bloco "casos-limite"). Piso de cobertura de `calculos.js`, `copiaSeguranca.js` e `termos.js` (Bloco 15): **95% das linhas, 90% das funções e 85% dos ramos**; abaixo disso, a verificação falha.
