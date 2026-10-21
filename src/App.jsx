@@ -75,6 +75,7 @@ import {
   DIAS_PRECO_ANTIGO,
   diasDesde,
   distanciaKm,
+  equivalenteEmValorCobrado,
   FONTES_PRECO,
   FORMAS_PAGAMENTO,
   fmtBRL,
@@ -90,6 +91,7 @@ import {
   pontoEquilibrioSemanal,
   posicaoNaConcorrencia,
   precoUnitarioItem,
+  receitaDoSalao,
   taxaEfetiva,
   ultimoPrecoPorConcorrente,
   VINCULOS_PROFISSIONAL,
@@ -1103,7 +1105,7 @@ function useToast() {
 /* ======================================================================= */
 /* App                                                                      */
 /* ======================================================================= */
-const VERSAO_APP = "v7.21";
+const VERSAO_APP = "v7.22";
 const CHAVE_TEMA = "preco-justo:tema";
 
 /* Rede de segurança: se qualquer aba travar por um motivo que eu não       */
@@ -6736,7 +6738,13 @@ function Painel({ nd, negocio, servicos, onRemoverServico, onEditarServico }) {
 
     const wsInd = XLSX.utils.aoa_to_sheet([
       ["Indicador", "Valor"],
-      ["Ponto de equilíbrio contábil (R$)", Number.isFinite(peContabilRS) ? peContabilRS : null],
+      [
+        dre.cotaParteParceiros > 0 ? "Ponto de equilíbrio contábil, em receita do salão (R$)" : "Ponto de equilíbrio contábil (R$)",
+        Number.isFinite(peContabilRS) ? peContabilRS : null,
+      ],
+      ...(equivalenteEmValorCobrado(peContabilRS, dre) !== null
+        ? [["Ponto de equilíbrio contábil, em valor cobrado dos clientes (R$)", equivalenteEmValorCobrado(peContabilRS, dre)]]
+        : []),
       ["Ponto de equilíbrio financeiro (R$)", Number.isFinite(peFinanceiroRS) ? peFinanceiroRS : null],
       ["Ponto de equilíbrio econômico (R$)", Number.isFinite(peEconomicoRS) ? peEconomicoRS : null],
       ["Margem de segurança (%)", margemSeguranca],
@@ -6934,6 +6942,7 @@ function Painel({ nd, negocio, servicos, onRemoverServico, onEditarServico }) {
 
           <EscadaPontoEquilibrio
             receita={dre.receitaBruta}
+            cobrado={{ valorCobrado: dre.valorCobrado, cotaParteParceiros: dre.cotaParteParceiros }}
             rcm={dre.rcm}
             financeiro={peFinanceiroRS}
             contabil={peContabilRS}
@@ -7327,6 +7336,15 @@ function MemorialCalculo({
         resultado={fmtBRL(peContabilRS)}
       />
 
+      {equivalenteEmValorCobrado(peContabilRS, dre) !== null && (
+        <LinhaFormula
+          nome="Ponto de Equilíbrio Contábil em valor cobrado dos clientes (com parceiros)"
+          formula="PE em valor cobrado = PE Contábil × Valor Cobrado ÷ (Valor Cobrado − Cota-parte dos Parceiros)"
+          substituicao={`${fmtBRL(peContabilRS)} × ${fmtBRL(dre.valorCobrado)} ÷ (${fmtBRL(dre.valorCobrado)} − ${fmtBRL(dre.cotaParteParceiros)})`}
+          resultado={fmtBRL(equivalenteEmValorCobrado(peContabilRS, dre))}
+        />
+      )}
+
       <LinhaFormula
         nome="Ponto de Equilíbrio Financeiro"
         formula={`PE Financeiro = (${nomeBaseCF} − Itens sem Saída de Caixa) ÷ RCM`}
@@ -7537,10 +7555,14 @@ function EscadaPontoEquilibrio({
   taxaRetorno,
   custoNaoCaixa,
   margemSeguranca,
+  cobrado,
 }) {
   const t = useT();
   const abrirFaq = useContext(FaqLinkContext);
   const temCapital = capitalInvestido > 0;
+  // Bloco 16: com parceiros, cada ponto aparece também em valor cobrado dos clientes.
+  const emCobrado = (v) => equivalenteEmValorCobrado(v, cobrado);
+  const comParceiros = emCobrado(1) !== null;
   const semVolume = !(receita > 0);
   const semMargem = !semVolume && !(rcm > 0);
 
@@ -7639,11 +7661,13 @@ function EscadaPontoEquilibrio({
       <div className="flex items-center gap-1.5">
         <TrendingUp size={14} style={{ color: t.primaryText }} />
         <span className="text-xs font-semibold" style={{ color: t.text }}>
-          Ponto de equilíbrio: quanto faturar por mês
+          Ponto de equilíbrio: {comParceiros ? "quanto o salão precisa receber por mês" : "quanto faturar por mês"}
         </span>
       </div>
       <p className="text-xs mt-1.5 mb-3" style={{ color: t.textMuted }}>
         São três valores porque respondem a três perguntas diferentes, uma depois da outra.
+        {comParceiros &&
+          " Com parceiros, os valores são da receita do salão, sem a cota-parte; abaixo de cada um, quanto isso dá em valor cobrado dos clientes."}
         {abrirFaq && (
           <>
             {" "}
@@ -7696,6 +7720,11 @@ function EscadaPontoEquilibrio({
                   <p className="font-num text-sm font-semibold whitespace-nowrap" style={{ color: t.text }}>
                     {Number.isFinite(d.valor) ? fmtBRL(d.valor) : "—"}
                   </p>
+                  {comParceiros && Number.isFinite(d.valor) && (
+                    <p className="font-num text-[11px] whitespace-nowrap" style={{ color: t.textMuted }}>
+                      ≈ {fmtBRL(emCobrado(d.valor))} cobrados
+                    </p>
+                  )}
                   {calculavel && (
                     <p
                       className="text-[11px] font-medium whitespace-nowrap"
@@ -7823,9 +7852,9 @@ function calcularSazonalidadeAutomatica(fechamentos) {
   const porMesCalendario = Array.from({ length: 12 }, () => []);
   fechamentos.forEach((f) => {
     const mesIndex = Number(f.mes.split("-")[1]) - 1;
-    porMesCalendario[mesIndex].push(f.faturamentoBruto);
+    porMesCalendario[mesIndex].push(receitaDoSalao(f));
   });
-  const mediaGeral = fechamentos.reduce((s, f) => s + f.faturamentoBruto, 0) / fechamentos.length;
+  const mediaGeral = fechamentos.reduce((s, f) => s + receitaDoSalao(f), 0) / fechamentos.length;
   if (mediaGeral <= 0) return null;
   return porMesCalendario.map((valores) => {
     if (valores.length === 0) return null;
@@ -8584,14 +8613,21 @@ function computeHistoricoMensal(fechamentos, sazonalidade) {
     .sort((a, b) => a.mes.localeCompare(b.mes))
     .map((f) => {
       const mesIndex = Number(f.mes.split("-")[1]) - 1;
+      // Bloco 16: régua única = receita do salão (valor cobrado − cota-parte dos parceiros).
+      // Margem e custos do mês na mesma régua; o valor cobrado aparece no detalhe do mês.
+      const receita = receitaDoSalao(f);
+      const lucro = N(f.lucroLiquidoCalculado);
       return {
         mes: f.mes,
         mesLabel: labelMes(f.mes),
-        faturamentoBruto: f.faturamentoBruto,
+        receita,
+        valorCobrado: N(f.faturamentoBruto),
+        cotaParte: N(f.cotaParteSnapshot),
         lucroLiquido: f.lucroLiquidoCalculado,
-        custosTotais: f.faturamentoBruto - f.lucroLiquidoCalculado,
-        margemLiquidaPct: Number(f.margemLiquidaPctCalculada?.toFixed(1)) || 0,
-        ticketMedio: f.atendimentosTotais > 0 ? f.faturamentoBruto / f.atendimentosTotais : 0,
+        custosTotais: receita - lucro,
+        margemLiquidaPct: receita > 0 ? Math.round((lucro / receita) * 1000) / 10 : 0,
+        // Ticket médio é o que o cliente paga por atendimento (valor cobrado).
+        ticketMedio: f.atendimentosTotais > 0 ? N(f.faturamentoBruto) / f.atendimentosTotais : 0,
         atendimentos: f.atendimentosTotais,
         temBreakdownServico:
           !!f.atendimentosPorServico && Object.values(f.atendimentosPorServico).some((v) => normalizarDetalheServico(v).quantidade > 0),
@@ -8701,18 +8737,22 @@ function computeComparativoMensalServicos(fechamentos, servicos, nd) {
 
 // Regra simples de comparação de deltas reais — nenhum número inventado, só
 // compara o que já está no histórico calculado a partir dos fechamentos.
-function detectarAnomalia(mesAtual, mesAnterior) {
-  if (!mesAtual || !mesAnterior || mesAnterior.faturamentoBruto <= 0 || mesAnterior.lucroLiquido === 0) return null;
-  const deltaFaturamento = (mesAtual.faturamentoBruto - mesAnterior.faturamentoBruto) / mesAnterior.faturamentoBruto;
+function detectarAnomalia(mesAtual, mesAnterior, comParceiros = false) {
+  if (!mesAtual || !mesAnterior || mesAnterior.receita <= 0 || mesAnterior.lucroLiquido === 0) return null;
+  const deltaFaturamento = (mesAtual.receita - mesAnterior.receita) / mesAnterior.receita;
+  const oQue = comParceiros ? "A receita do salão" : "O faturamento";
   const deltaLucro = (mesAtual.lucroLiquido - mesAnterior.lucroLiquido) / Math.abs(mesAnterior.lucroLiquido);
   if (deltaFaturamento > 0.1 && deltaLucro < deltaFaturamento * 0.5) {
-    return `Faturamento subiu ${(deltaFaturamento * 100).toFixed(0)}% de ${mesAnterior.mesLabel} pra ${mesAtual.mesLabel}, mas o lucro só ${(deltaLucro * 100).toFixed(0)}%. Vale revisar custo de insumos ou comissão dos serviços que mais venderam nesse período.`;
+    return `${oQue} subiu ${(deltaFaturamento * 100).toFixed(0)}% de ${mesAnterior.mesLabel} pra ${mesAtual.mesLabel}, mas o lucro só ${(deltaLucro * 100).toFixed(0)}%. Vale revisar custo de insumos ou comissão dos serviços que mais venderam nesse período.`;
   }
   if (deltaFaturamento < -0.1 && mesAtual.sazonalidadeEsperadaPct >= 110) {
-    return `${mesAtual.mesLabel} é um mês de alta esperada na sua sazonalidade configurada, mas o faturamento caiu ${(Math.abs(deltaFaturamento) * 100).toFixed(0)}% em relação a ${mesAnterior.mesLabel}. Vale investigar se foi concorrência, preço ou queda de demanda.`;
+    return `${mesAtual.mesLabel} é um mês de alta esperada na sua sazonalidade configurada, mas ${oQue.toLowerCase()} caiu ${(Math.abs(deltaFaturamento) * 100).toFixed(0)}% em relação a ${mesAnterior.mesLabel}. Vale investigar se foi concorrência, preço ou queda de demanda.`;
   }
   return null;
 }
+
+// Eixo em milhares: "2,5k" em vez de arredondar 2.500 para "3k" (Bloco 16).
+const fmtMilhar = (v) => `${(v / 1000).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}k`;
 
 const BANDAS_SAZONAIS_PADRAO = [
   { de: "05", ate: "05", label: "Dia das Mães" },
@@ -8728,13 +8768,21 @@ function TooltipEvolucao({ active, payload }) {
   return (
     <div className="rounded-lg p-2.5 text-xs" style={{ background: t.text, color: t.bg, boxShadow: t.shadow }}>
       <p className="font-semibold mb-1">{d.mesLabel}</p>
-      <p>Faturamento: {fmtBRL(d.faturamentoBruto)}</p>
+      {d.cotaParte > 0 ? (
+        <>
+          <p>Receita do salão: {fmtBRL(d.receita)}</p>
+          <p style={{ opacity: 0.8 }}>Valor cobrado dos clientes: {fmtBRL(d.valorCobrado)}</p>
+          <p style={{ opacity: 0.8 }}>Cota-parte dos parceiros: −{fmtBRL(d.cotaParte)}</p>
+        </>
+      ) : (
+        <p>Faturamento: {fmtBRL(d.receita)}</p>
+      )}
       <p>Custos totais: {fmtBRL(d.custosTotais)}</p>
       <p>
         Lucro líquido: {fmtBRL(d.lucroLiquido)} ({fmtPct(d.margemLiquidaPct)})
       </p>
       <p>
-        Ticket médio: {fmtBRL(d.ticketMedio)} · {d.atendimentos} atendimentos
+        Ticket médio do cliente: {fmtBRL(d.ticketMedio)} · {d.atendimentos} atendimentos
       </p>
     </div>
   );
@@ -8743,6 +8791,8 @@ function TooltipEvolucao({ active, payload }) {
 function GraficoEvolucao({ historico, pontoEquilibrio }) {
   const t = useT();
   const [mostrarEsperado, setMostrarEsperado] = useState(true);
+  const comParceiros = historico.some((h) => h.cotaParte > 0);
+  const nomeReceita = comParceiros ? "Receita do salão" : "Faturamento";
   const anosNoHistorico = [...new Set(historico.map((h) => h.mes.slice(0, 4)))];
   const mostrarPE = Number.isFinite(pontoEquilibrio) && pontoEquilibrio > 0;
 
@@ -8750,7 +8800,7 @@ function GraficoEvolucao({ historico, pontoEquilibrio }) {
     <div>
       <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
         <p className="text-sm font-semibold" style={{ color: t.text }}>
-          Evolução do lucro e faturamento
+          Evolução do lucro e {comParceiros ? "da receita do salão" : "faturamento"}
         </p>
         <label className="flex items-center gap-1.5 text-[11px] cursor-pointer" style={{ color: t.textMuted }}>
           <input type="checkbox" checked={mostrarEsperado} onChange={(e) => setMostrarEsperado(e.target.checked)} />
@@ -8780,13 +8830,16 @@ function GraficoEvolucao({ historico, pontoEquilibrio }) {
             )),
           )}
           <XAxis dataKey="mesLabel" tick={{ fontSize: 10, fill: t.textMuted }} />
-          <YAxis yAxisId="reais" tick={{ fontSize: 10, fill: t.textMuted }} tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`} />
+          <YAxis yAxisId="reais" tick={{ fontSize: 10, fill: t.textMuted }} tickFormatter={fmtMilhar} />
           <YAxis yAxisId="pct" orientation="right" tick={{ fontSize: 10, fill: t.textMuted }} tickFormatter={(v) => `${v}%`} />
           <Tooltip content={<TooltipEvolucao />} />
           {mostrarPE && (
             <ReferenceLine
               yAxisId="reais"
               y={pontoEquilibrio}
+              // Bloco 16: a escala cresce até o ponto de equilíbrio. Antes, quando ele ficava acima
+              // de todos os meses (o caso mais grave), a linha simplesmente sumia do gráfico.
+              ifOverflow="extendDomain"
               stroke={t.danger}
               strokeDasharray="6 3"
               strokeWidth={1.5}
@@ -8796,11 +8849,11 @@ function GraficoEvolucao({ historico, pontoEquilibrio }) {
           <Area
             yAxisId="reais"
             type="monotone"
-            dataKey="faturamentoBruto"
+            dataKey="receita"
             stroke={t.primary}
             strokeWidth={2.5}
             fill="url(#gradienteFaturamento)"
-            name="Faturamento"
+            name={nomeReceita}
             dot={{ r: 3, fill: t.primary, strokeWidth: 0 }}
           />
           <Line
@@ -8828,7 +8881,7 @@ function GraficoEvolucao({ historico, pontoEquilibrio }) {
       </ResponsiveContainer>
       <div className="flex items-center gap-3 mt-1 text-[10px] flex-wrap" style={{ color: t.textMuted }}>
         <span className="inline-flex items-center gap-1">
-          <span style={{ width: 10, height: 2, background: t.primary, display: "inline-block" }} /> Faturamento
+          <span style={{ width: 10, height: 2, background: t.primary, display: "inline-block" }} /> {nomeReceita}
         </span>
         <span className="inline-flex items-center gap-1">
           <span style={{ width: 8, height: 8, borderRadius: 999, background: t.success, display: "inline-block" }} /> Margem líquida
@@ -8842,6 +8895,12 @@ function GraficoEvolucao({ historico, pontoEquilibrio }) {
           <span style={{ width: 10, height: 2, background: t.warningSoft, display: "inline-block" }} /> período sazonal típico
         </span>
       </div>
+      {comParceiros && (
+        <p className="text-[11px] mt-1.5" style={{ color: t.textMuted }}>
+          Com parceiros, a receita e o ponto de equilíbrio estão na mesma régua: a receita do salão, sem a cota-parte. Toque num mês para
+          ver o valor cobrado dos clientes.
+        </p>
+      )}
     </div>
   );
 }
@@ -9057,7 +9116,9 @@ function EvolucaoComparativos({ nd, servicos, fechamentos, sazonalidade, pontoEq
     );
   }
 
-  const anomalia = historico.length >= 2 ? detectarAnomalia(historico[historico.length - 1], historico[historico.length - 2]) : null;
+  const comParceiros = historico.some((h) => h.cotaParte > 0);
+  const anomalia =
+    historico.length >= 2 ? detectarAnomalia(historico[historico.length - 1], historico[historico.length - 2], comParceiros) : null;
   const temBreakdown = historico.some((h) => h.temBreakdownServico);
   const temExemplo = fechamentos.some((f) => f.exemplo);
 
@@ -9162,7 +9223,7 @@ function ProjecaoCaixa({ dre, sazonalidade, onChange, fechamentos }) {
     if (real) {
       return {
         mes: labelMes(chave),
-        Receita: Math.round(real.faturamentoBruto),
+        Receita: Math.round(receitaDoSalao(real)),
         Resultado: Math.round(real.lucroLiquidoCalculado),
         real: true,
       };
@@ -10886,6 +10947,10 @@ const FAQ_DADOS = [
           {
             tipo: "texto",
             texto: `Por que os três importam juntos: é possível estar acima do ponto de equilíbrio financeiro (o caixa fecha) e ainda assim abaixo do contábil ou do econômico — ou seja, o negócio "sobrevive" no curto prazo, mas está descapitalizando o dono ou deixando de gerar o retorno que justificaria o risco do negócio.`,
+          },
+          {
+            tipo: "texto",
+            texto: `Com profissionais-parceiros (Lei do Salão-Parceiro), a cota-parte deles não é receita do salão. Por isso os pontos de equilíbrio, a margem de segurança, a sazonalidade e os gráficos de Evolução e da Projeção de caixa usam a receita do salão: o valor cobrado dos clientes menos a cota-parte. Para facilitar a comparação com o que passa na maquininha, o app mostra ao lado quanto cada ponto representa em valor cobrado. Exemplo: com R$ 20.000 cobrados e R$ 4.000 de cota-parte, um ponto de equilíbrio de R$ 12.000 de receita do salão equivale a R$ 15.000 cobrados (12.000 × 20.000 ÷ 16.000). A margem de segurança é a mesma nas duas réguas.`,
           },
         ],
       },

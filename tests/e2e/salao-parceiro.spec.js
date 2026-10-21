@@ -7,6 +7,16 @@ test("cota-parte de parceiro baixa o preço e aparece no DRE", async ({ page }) 
   const erros = [];
   page.on("pageerror", (e) => erros.push(e.message));
   await primeiroAcesso(page);
+  // Sem parceiros, o Painel não mostra a equivalência em valor cobrado (Bloco 16).
+  await page.getByRole("button", { name: "Painel" }).first().click();
+  await expect(
+    page
+      .getByText(/Ponto de equilíbrio: quanto faturar por mês/)
+      .filter({ visible: true })
+      .first(),
+  ).toBeVisible();
+  await expect(page.getByText("= Receita bruta do salão").filter({ visible: true })).toHaveCount(0);
+  await expect(page.getByText(/≈ R\$\s[\d.,]+ cobrados/)).toHaveCount(0);
   // Parceira válida (CNPJ e contrato homologado) cadastrada direto nos dados do app.
   await page.evaluate(() => {
     const chave = Object.keys(localStorage).find((k) => k.endsWith("negocio:config"));
@@ -50,5 +60,14 @@ test("cota-parte de parceiro baixa o preço e aparece no DRE", async ({ page }) 
   await page.getByRole("button", { name: "Painel" }).first().click();
   await expect(page.getByText("(–) Cota-parte repassada aos parceiros").filter({ visible: true }).first()).toBeVisible();
   await expect(page.getByText("= Receita bruta do salão").filter({ visible: true }).first()).toBeVisible();
+
+  // Bloco 16 (opção C): pontos de equilíbrio na receita do salão, com o equivalente em valor cobrado.
+  await expect(
+    page
+      .getByText(/Com parceiros, os valores são da receita do salão/)
+      .filter({ visible: true })
+      .first(),
+  ).toBeVisible();
+  await expect(page.getByText(/≈ R\$\s[\d.,]+ cobrados/).filter({ visible: true })).toHaveCount(3);
   expect(erros).toEqual([]);
 });

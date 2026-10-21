@@ -24,6 +24,7 @@ import {
   custoMensalInsumoCompartilhado,
   diasDesde,
   distanciaKm,
+  equivalenteEmValorCobrado,
   fmtPct,
   linhasPlanilhaObservatorio,
   mediana,
@@ -36,6 +37,7 @@ import {
   pisoDoServico,
   posicaoNaConcorrencia,
   precoUnitarioItem,
+  receitaDoSalao,
   taxaEfetiva,
   ultimoPrecoPorConcorrente,
   vinculoDe,
@@ -483,6 +485,28 @@ describe("Lei do Salão-Parceiro (Bloco 11)", () => {
     expect(dre.impostos).toBeCloseTo(P * 0.6 * 0.06 * 120, 8); // 6% sobre a parte do salão
     // margem de contribuição = mesma conta por unidade do motor
     expect(dre.margemContribuicaoTotal).toBeCloseTo(sc[0].calc.margemContribuicaoUnitaria * 120, 8);
+  });
+  // Bloco 16 (opção C): a régua é a receita do salão; o valor cobrado é a tradução.
+  it("equivalente em valor cobrado: R$ 12.000 × 20.000 ÷ (20.000 − 4.000) = R$ 15.000", () => {
+    expect(equivalenteEmValorCobrado(12000, { valorCobrado: 20000, cotaParteParceiros: 4000 })).toBe(15000);
+    expect(equivalenteEmValorCobrado(12000, { valorCobrado: 20000, cotaParteParceiros: 0 })).toBeNull();
+    expect(equivalenteEmValorCobrado(12000, { valorCobrado: 4000, cotaParteParceiros: 4000 })).toBeNull();
+    expect(equivalenteEmValorCobrado(Number.POSITIVE_INFINITY, { valorCobrado: 20000, cotaParteParceiros: 4000 })).toBeNull();
+    expect(equivalenteEmValorCobrado(12000)).toBeNull();
+  });
+  it("margem de segurança é a mesma nas duas réguas", () => {
+    const nd = ndCom();
+    const sc = [{ ...corteParceiro, calc: calcularServico(corteParceiro, nd) }];
+    const dre = montarDRE(sc, nd);
+    const ind = calcularIndicadoresGerenciais(sc, dre, nd, negocioExemplo());
+    const peCobrado = equivalenteEmValorCobrado(ind.peContabilRS, dre);
+    expect(peCobrado).toBeGreaterThan(ind.peContabilRS);
+    expect(((dre.valorCobrado - peCobrado) / dre.valorCobrado) * 100).toBeCloseTo(ind.margemSeguranca, 8);
+  });
+  it("receita do salão no fechamento: faturamento − cota-parte; fechamento antigo fica igual", () => {
+    expect(receitaDoSalao({ faturamentoBruto: 20000, cotaParteSnapshot: 4000 })).toBe(16000);
+    expect(receitaDoSalao({ faturamentoBruto: 9000 })).toBe(9000);
+    expect(receitaDoSalao(null)).toBe(0);
   });
   it("sem parceiros, o DRE não muda (valor cobrado = receita bruta)", () => {
     const nd = computeNegocioDerivado(negocioExemplo());
