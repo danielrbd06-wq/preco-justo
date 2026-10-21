@@ -42,10 +42,13 @@ export default function MapaConcorrencia({
   const camadaRef = useRef(null);
   const onMarcarRef = useRef(onMarcar);
   const marcandoRef = useRef(marcando);
+  const onSelecionarRef = useRef(onSelecionar);
   onMarcarRef.current = onMarcar;
   marcandoRef.current = marcando;
+  onSelecionarRef.current = onSelecionar;
 
-  // Cria o mapa uma vez só.
+  // Cria o mapa uma vez só. A troca de cidade (centro e zoom) é tratada no efeito seguinte.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: o mapa do Leaflet é criado uma única vez, ao montar
   useEffect(() => {
     const mapa = L.map(divRef.current, { zoomControl: true, attributionControl: true }).setView(centro, zoom);
     L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: ATRIBUICAO }).addTo(mapa);
@@ -63,16 +66,16 @@ export default function MapaConcorrencia({
       mapa.remove();
       mapaRef.current = null;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Troca de cidade: leva o mapa até ela (voo curto; direto se o usuário pede menos movimento).
+  const [latCentro, lngCentro] = centro;
   useEffect(() => {
     const mapa = mapaRef.current;
     if (!mapa) return;
-    if (prefereMenosMovimento()) mapa.setView(centro, zoom);
-    else mapa.flyTo(centro, zoom, { duration: 0.8 });
-  }, [centro[0], centro[1], zoom]);
+    if (prefereMenosMovimento()) mapa.setView([latCentro, lngCentro], zoom);
+    else mapa.flyTo([latCentro, lngCentro], zoom, { duration: 0.8 });
+  }, [latCentro, lngCentro, zoom]);
 
   // Cursor de mira enquanto o usuário escolhe um ponto.
   useEffect(() => {
@@ -109,7 +112,7 @@ export default function MapaConcorrencia({
       m.bindTooltip(c.nome || "Concorrente", { direction: "top", offset: [0, -6] });
       m.on("click", (e) => {
         L.DomEvent.stopPropagation(e);
-        if (!marcandoRef.current) onSelecionar?.(c.id);
+        if (!marcandoRef.current) onSelecionarRef.current?.(c.id);
       });
       m.addTo(camada);
     });

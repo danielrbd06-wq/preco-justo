@@ -170,3 +170,26 @@ test("Fechamento do mês: depois de salvar, lembra de baixar a cópia de seguran
   await expect(page.getByRole("button", { name: "Cópia baixada" })).toBeVisible();
   await expect(page.getByText("Fechamento salvo. Que tal guardar uma cópia?")).toBeHidden({ timeout: 5000 });
 });
+
+// Bloco 17: o rascunho do fechamento usa o mesmo hook dos outros formulários.
+test("Fechamento do mês: o que foi digitado volta depois de trocar de aba, e cancelar apaga", async ({ page }) => {
+  await primeiroAcesso(page);
+  await irPara(page, "Painel");
+  await abrirSecao(page, "Fechamento mensal");
+  await page.getByRole("button", { name: "Fechar agora" }).click();
+  const observacoes = page.locator(
+    "xpath=//span[starts-with(normalize-space(.),'Observações (opcional)')]/ancestor::label[1]//*[self::input or self::textarea]",
+  );
+  await observacoes.fill("Mês com feriado");
+  await irPara(page, "FAQ");
+  await irPara(page, "Painel");
+  await expect(page.getByText("Recuperamos o que você tinha digitado neste fechamento")).toBeVisible();
+  await expect(observacoes).toHaveValue("Mês com feriado");
+  await page.getByRole("button", { name: "Cancelar" }).first().click();
+  await page.reload();
+  await page.waitForTimeout(1000);
+  await irPara(page, "Painel");
+  await abrirSecao(page, "Fechamento mensal");
+  await expect(page.getByText("Recuperamos o que você tinha digitado neste fechamento")).toHaveCount(0);
+  await expect(observacoes).toHaveCount(0);
+});

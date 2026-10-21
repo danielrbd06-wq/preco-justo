@@ -1105,7 +1105,7 @@ function useToast() {
 /* ======================================================================= */
 /* App                                                                      */
 /* ======================================================================= */
-const VERSAO_APP = "v7.22";
+const VERSAO_APP = "v7.23";
 const CHAVE_TEMA = "preco-justo:tema";
 
 /* Rede de segurança: se qualquer aba travar por um motivo que eu não       */
@@ -1299,6 +1299,7 @@ function App({ onSair, nomeEstabelecimento } = {}) {
     setTab("calculadora");
   }, [negocio]);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: a troca de aba é o gatilho do esqueleto de carregamento
   useEffect(() => {
     setTabLoading(true);
     const tm = setTimeout(() => setTabLoading(false), 320);
@@ -1718,6 +1719,7 @@ function useBalaoAncorado({ aberto, setAberto, botaoRef, balaoRef, largura = 230
     setPos(acima || !altura ? { left, largura: w, bottom: vh - r.top + 8 } : { left, largura: w, top: r.bottom + 8 });
   }, [botaoRef, balaoRef, largura, preferencia, setAberto]);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: pos?.largura dispara a segunda passada, já com a altura real do balão medida
   useLayoutEffect(() => {
     if (!aberto) {
       setPos(null);
@@ -2597,8 +2599,9 @@ function IndicadorAutoSalvar({ status }) {
 /* Ao montar, lê o rascunho guardado em `chave` e entrega a `aoRecuperar`, que  */
 /* aplica os valores (ou devolve false se o rascunho não é deste formulário).   */
 /* A cada mudança de `estado`, grava; se o estado volta ao inicial, apaga.      */
+/* `ativo: false` pausa a gravação; `dispensarAviso` esconde o aviso sem apagar.*/
 /* Salvar e cancelar devem chamar `descartar`.                                  */
-function useRascunho(chave, estado, { aoRecuperar } = {}) {
+function useRascunho(chave, estado, { aoRecuperar, ativo = true } = {}) {
   const [recuperado, setRecuperado] = useState(false);
   const estadoStr = JSON.stringify(estado);
   const inicialRef = useRef(estadoStr);
@@ -2619,6 +2622,8 @@ function useRascunho(chave, estado, { aoRecuperar } = {}) {
     };
   }, [chave]);
   useEffect(() => {
+    // ativo=false (ex.: editando um serviço já salvo): não grava nem apaga o rascunho.
+    if (!ativo) return;
     if (estadoStr === inicialRef.current) {
       if (lidoRef.current) {
         excluirComFallback(chave);
@@ -2628,12 +2633,13 @@ function useRascunho(chave, estado, { aoRecuperar } = {}) {
     }
     alteradoRef.current = true;
     salvarComFallback(chave, estadoStr);
-  }, [chave, estadoStr]);
+  }, [chave, estadoStr, ativo]);
   const descartar = useCallback(() => {
     excluirComFallback(chave);
     setRecuperado(false);
   }, [chave]);
-  return { recuperado, descartar };
+  const dispensarAviso = useCallback(() => setRecuperado(false), []);
+  return { recuperado, descartar, dispensarAviso };
 }
 
 function AvisoRascunhoRecuperado({ children = "Recuperamos o que você estava digitando. Confira e salve." }) {
@@ -4403,27 +4409,28 @@ function ServicoCard({ s, onEditar, onExcluir, onAceitarNovoPreco, diasMesNegoci
   );
 }
 
+/* Ordenações da biblioteca de serviços (fixas: não dependem do componente). */
+const rHoraDe = (s) => (s.calc.status === "ok" && N(s.horasPorAtendimento) > 0 ? s.calc.preco / N(s.horasPorAtendimento) : -1);
+const COMPARADORES_SERVICO = {
+  nome: (a, b) => a.nome.localeCompare(b.nome, "pt-BR"),
+  preco: (a, b) => (b.calc.status === "ok" ? b.calc.preco : -1) - (a.calc.status === "ok" ? a.calc.preco : -1),
+  margem: (a, b) =>
+    (b.calc.status === "ok" ? b.calc.margemContribuicaoUnitaria : -1) - (a.calc.status === "ok" ? a.calc.margemContribuicaoUnitaria : -1),
+  rhora: (a, b) => rHoraDe(b) - rHoraDe(a),
+};
+
 /* Biblioteca "Meus serviços": busca, ordenação e a lista de cards.        */
 function BibliotecaServicos({ servicosCalc, onEditar, onExcluir, onAceitarNovoPreco, onNovo, diasMesNegocio }) {
   const t = useT();
   const [busca, setBusca] = useState("");
   const [ordenacao, setOrdenacao] = useState("nome");
 
-  const rHoraDe = (s) => (s.calc.status === "ok" && N(s.horasPorAtendimento) > 0 ? s.calc.preco / N(s.horasPorAtendimento) : -1);
-  const comparadores = {
-    nome: (a, b) => a.nome.localeCompare(b.nome, "pt-BR"),
-    preco: (a, b) => (b.calc.status === "ok" ? b.calc.preco : -1) - (a.calc.status === "ok" ? a.calc.preco : -1),
-    margem: (a, b) =>
-      (b.calc.status === "ok" ? b.calc.margemContribuicaoUnitaria : -1) - (a.calc.status === "ok" ? a.calc.margemContribuicaoUnitaria : -1),
-    rhora: (a, b) => rHoraDe(b) - rHoraDe(a),
-  };
-
   const lista = useMemo(() => {
     const termo = busca.trim().toLowerCase();
     const filtrada = servicosCalc.filter(
       (s) => !termo || s.nome.toLowerCase().includes(termo) || (s.categoria || "").toLowerCase().includes(termo),
     );
-    return [...filtrada].sort(comparadores[ordenacao]);
+    return [...filtrada].sort(COMPARADORES_SERVICO[ordenacao]);
   }, [servicosCalc, busca, ordenacao]);
 
   if (servicosCalc.length === 0) {
@@ -5223,23 +5230,30 @@ function Calculadora({
   onTerminarEdicao,
 }) {
   const t = useT();
-  const vazio = {
-    nome: "",
-    categoria: "",
-    tipo: "servico",
-    custosVariaveis: custosVariaveisIniciaisPorSegmento(nd?.perfil?.segmento),
-    comissaoPct: "0",
-    taxaCartaoPct: "0",
-    margemPct: "20",
-    atendimentosMes: "",
-    horasAtendimento: "1",
-    precoCobrado: "",
-    // Serviço novo usa a comissão média da equipe quando ela existe (Bloco 4).
-    comissaoModo: nd?.comissaoEquipe ? "equipe" : "propria",
-    // ...e a taxa média de recebimento do negócio, quando ela existe (Bloco 5).
-    taxaModo: nd?.taxaRecebimento ? "negocio" : "propria",
-    comissaoEhCotaParte: false, // Bloco 11: comissão própria que é cota-parte de parceiro
-  };
+  // Valores de um serviço novo; dependem do negócio (segmento, comissão e taxa médias).
+  const segmentoNegocio = nd?.perfil?.segmento;
+  const temComissaoEquipe = !!nd?.comissaoEquipe;
+  const temTaxaNegocio = !!nd?.taxaRecebimento;
+  const vazio = useMemo(
+    () => ({
+      nome: "",
+      categoria: "",
+      tipo: "servico",
+      custosVariaveis: custosVariaveisIniciaisPorSegmento(segmentoNegocio),
+      comissaoPct: "0",
+      taxaCartaoPct: "0",
+      margemPct: "20",
+      atendimentosMes: "",
+      horasAtendimento: "1",
+      precoCobrado: "",
+      // Serviço novo usa a comissão média da equipe quando ela existe (Bloco 4).
+      comissaoModo: temComissaoEquipe ? "equipe" : "propria",
+      // ...e a taxa média de recebimento do negócio, quando ela existe (Bloco 5).
+      taxaModo: temTaxaNegocio ? "negocio" : "propria",
+      comissaoEhCotaParte: false, // Bloco 11: comissão própria que é cota-parte de parceiro
+    }),
+    [segmentoNegocio, temComissaoEquipe, temTaxaNegocio],
+  );
 
   const [modo, setModo] = useState("descobrir"); // 'descobrir' | 'ja-tenho'
   const [mostrarFormulario, setMostrarFormulario] = useState(() => !!servicoEmEdicao);
@@ -5322,63 +5336,53 @@ function Calculadora({
                 : "",
           }
         : vazio,
-    [servicoEmEdicao],
+    [servicoEmEdicao, vazio],
   );
   const sujo = mostrarFormulario && JSON.stringify(rascunhoAtual) !== JSON.stringify(rascunhoBase);
 
-  // Rascunho do serviço novo (Bloco 9): o que foi digitado no assistente fica guardado
-  // no aparelho a cada mudança e volta ao reabrir a Calculadora, depois de trocar de
-  // aba, recarregar a página ou atualizar o app. Substitui o aviso do navegador ao sair,
-  // que não protegia a troca de aba. Só guarda quando há algo de fato preenchido.
-  const [rascunhoRecuperado, setRascunhoRecuperado] = useState(false);
-  const rascunhoLidoRef = useRef(false);
+  // Rascunho do serviço novo (Bloco 9; com useRascunho desde o Bloco 17): o que foi
+  // digitado no assistente fica guardado no aparelho e volta ao reabrir a Calculadora,
+  // depois de trocar de aba, recarregar a página ou atualizar o app. Só guarda quando
+  // há algo preenchido, e nunca enquanto um serviço já salvo está sendo editado.
   const temConteudo = !!(
     nomeServico.trim() ||
     N(atendimentosMes) > 0 ||
     N(precoCobrado) > 0 ||
     custosVariaveis.some((c) => N(c.valor) > 0 || N(c.valorCompra) > 0)
   );
-  useEffect(() => {
-    if (servicoEmEdicao) {
-      rascunhoLidoRef.current = true;
-      return undefined;
-    }
-    let vivo = true;
-    lerRascunho(CHAVE_RASCUNHO_SERVICO).then((d) => {
-      rascunhoLidoRef.current = true;
-      if (!vivo || !d) return;
-      setModo(d.modo === "ja-tenho" ? "ja-tenho" : "descobrir");
-      setNomeServico(d.nome || "");
-      setCategoria(d.categoria || "");
-      setTipo(d.tipo || "servico");
-      if (Array.isArray(d.custosVariaveis)) setCustosVariaveis(d.custosVariaveis);
-      setComissaoPct(d.comissaoPct ?? vazio.comissaoPct);
-      setComissaoModo(d.comissaoModo || "propria");
-      setComissaoEhCotaParte(!!d.comissaoEhCotaParte);
-      setTaxaCartaoPct(d.taxaCartaoPct ?? vazio.taxaCartaoPct);
-      setTaxaModo(d.taxaModo || "propria");
-      setMargemPct(d.margemPct ?? vazio.margemPct);
-      setAtendimentosMes(d.atendimentosMes ?? "");
-      setHorasAtendimento(d.horasAtendimento ?? vazio.horasAtendimento);
-      setPrecoCobrado(d.precoCobrado ?? "");
-      setPrecoCobradoDebounced(d.precoCobrado ?? "");
-      setPrecoSeparadoReferencia(d.precoSeparadoReferencia ?? null);
-      setPassoWizard(Math.min(5, Math.max(1, N(d.passoWizard) || 1)));
-      setMostrarFormulario(true);
-      setRascunhoRecuperado(true);
-    });
-    return () => {
-      vivo = false;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-  useEffect(() => {
-    if (!rascunhoLidoRef.current || servicoEmEdicao || !mostrarFormulario || !temConteudo) return;
-    salvarComFallback(
-      CHAVE_RASCUNHO_SERVICO,
-      JSON.stringify({ ...rascunhoAtual, passoWizard, precoSeparadoReferencia, guardadoEm: Date.now() }),
-    );
-  }, [rascunhoAtual, passoWizard, precoSeparadoReferencia, servicoEmEdicao, mostrarFormulario, temConteudo]);
+  const {
+    recuperado: rascunhoRecuperado,
+    descartar: descartarRascunho,
+    dispensarAviso: dispensarAvisoRascunho,
+  } = useRascunho(
+    CHAVE_RASCUNHO_SERVICO,
+    mostrarFormulario && temConteudo ? { ...rascunhoAtual, passoWizard, precoSeparadoReferencia } : null,
+    {
+      ativo: !servicoEmEdicao,
+      aoRecuperar: (d) => {
+        if (servicoEmEdicao) return false;
+        setModo(d.modo === "ja-tenho" ? "ja-tenho" : "descobrir");
+        setNomeServico(d.nome || "");
+        setCategoria(d.categoria || "");
+        setTipo(d.tipo || "servico");
+        if (Array.isArray(d.custosVariaveis)) setCustosVariaveis(d.custosVariaveis);
+        setComissaoPct(d.comissaoPct ?? vazio.comissaoPct);
+        setComissaoModo(d.comissaoModo || "propria");
+        setComissaoEhCotaParte(!!d.comissaoEhCotaParte);
+        setTaxaCartaoPct(d.taxaCartaoPct ?? vazio.taxaCartaoPct);
+        setTaxaModo(d.taxaModo || "propria");
+        setMargemPct(d.margemPct ?? vazio.margemPct);
+        setAtendimentosMes(d.atendimentosMes ?? "");
+        setHorasAtendimento(d.horasAtendimento ?? vazio.horasAtendimento);
+        setPrecoCobrado(d.precoCobrado ?? "");
+        setPrecoCobradoDebounced(d.precoCobrado ?? "");
+        setPrecoSeparadoReferencia(d.precoSeparadoReferencia ?? null);
+        setPassoWizard(Math.min(5, Math.max(1, N(d.passoWizard) || 1)));
+        setMostrarFormulario(true);
+        return true;
+      },
+    },
+  );
 
   // debounce ~300ms no preço informado, pra não recalcular tudo a cada tecla
   useEffect(() => {
@@ -5435,8 +5439,7 @@ function Calculadora({
     setPrecoCobradoDebounced(vazio.precoCobrado);
     setPrecoSeparadoReferencia(null);
     // Começar de novo, salvar ou fechar descarta o rascunho guardado.
-    excluirComFallback(CHAVE_RASCUNHO_SERVICO);
-    setRascunhoRecuperado(false);
+    descartarRascunho();
   };
 
   const abrirNovo = () => {
@@ -6045,11 +6048,7 @@ function Calculadora({
                 <span>Recuperamos o serviço que você estava criando. Continue de onde parou.</span>
               </span>
               <span className="flex gap-3 shrink-0">
-                <button
-                  type="button"
-                  onClick={() => setRascunhoRecuperado(false)}
-                  className="btn-press touch-target font-semibold underline"
-                >
+                <button type="button" onClick={dispensarAvisoRascunho} className="btn-press touch-target font-semibold underline">
                   Ok
                 </button>
                 <button
@@ -6411,8 +6410,8 @@ function GraficoRoscaPreco({ materiais, custoFixo, taxas, lucro, preco }) {
         <ResponsiveContainer width="100%" height="100%">
           <PieChart>
             <Pie data={dados} dataKey="value" nameKey="name" innerRadius={30} outerRadius={52} paddingAngle={2} stroke="none">
-              {dados.map((d, i) => (
-                <Cell key={i} fill={d.color} />
+              {dados.map((d) => (
+                <Cell key={d.name} fill={d.color} />
               ))}
             </Pie>
           </PieChart>
@@ -7970,45 +7969,33 @@ function FormularioFechamento({ mes, nd, servicos, profissionais, registroExiste
     );
   });
 
-  // Rascunho do fechamento (Bloco 9): o que foi digitado fica guardado no aparelho
-  // e volta ao reabrir este mês, depois de trocar de aba, recarregar ou atualizar.
-  const chaveRascunho = chaveRascunhoFechamento(mes);
-  const estadoStr = JSON.stringify({
-    faturamentoBrutoManual,
-    atendimentosTotaisManual,
-    observacoes,
-    mostrarPorServico,
-    mostrarPorProfissional,
-    divisaoProfissional,
-    detalhe,
-  });
-  const estadoInicialRef = useRef(estadoStr);
-  const rascunhoLidoRef = useRef(false);
-  const [rascunhoRecuperado, setRascunhoRecuperado] = useState(false);
-  useEffect(() => {
-    let vivo = true;
-    lerRascunho(chaveRascunho).then((d) => {
-      rascunhoLidoRef.current = true;
-      if (!vivo || !d) return;
-      setFaturamentoBrutoManual(d.faturamentoBrutoManual ?? "");
-      setAtendimentosTotaisManual(d.atendimentosTotaisManual ?? "");
-      setObservacoes(d.observacoes ?? "");
-      setMostrarPorServico(!!d.mostrarPorServico);
-      setMostrarPorProfissional(!!d.mostrarPorProfissional);
-      setDivisaoProfissional(d.divisaoProfissional || {});
-      setDetalhe(d.detalhe || {});
-      setRascunhoRecuperado(true);
-    });
-    return () => {
-      vivo = false;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-  useEffect(() => {
-    if (!rascunhoLidoRef.current || estadoStr === estadoInicialRef.current) return;
-    salvarComFallback(chaveRascunho, estadoStr);
-  }, [estadoStr, chaveRascunho]);
-  const descartarRascunho = () => excluirComFallback(chaveRascunho);
+  // Rascunho do fechamento (Bloco 9; com useRascunho desde o Bloco 17): o que foi
+  // digitado fica guardado no aparelho e volta ao reabrir este mês, depois de trocar
+  // de aba, recarregar ou atualizar.
+  const { recuperado: rascunhoRecuperado, descartar: descartarRascunho } = useRascunho(
+    chaveRascunhoFechamento(mes),
+    {
+      faturamentoBrutoManual,
+      atendimentosTotaisManual,
+      observacoes,
+      mostrarPorServico,
+      mostrarPorProfissional,
+      divisaoProfissional,
+      detalhe,
+    },
+    {
+      aoRecuperar: (d) => {
+        setFaturamentoBrutoManual(d.faturamentoBrutoManual ?? "");
+        setAtendimentosTotaisManual(d.atendimentosTotaisManual ?? "");
+        setObservacoes(d.observacoes ?? "");
+        setMostrarPorServico(!!d.mostrarPorServico);
+        setMostrarPorProfissional(!!d.mostrarPorProfissional);
+        setDivisaoProfissional(d.divisaoProfissional || {});
+        setDetalhe(d.detalhe || {});
+        return true;
+      },
+    },
+  );
 
   const servicosValidos = useMemo(() => (servicos || []).filter((s) => calcularParaExibicao(s, nd).status === "ok"), [servicos, nd]);
 
@@ -8961,7 +8948,7 @@ function DestaqueMelhorServico({ ranking, dadosMensais }) {
 function RankingServicos({ ranking }) {
   const t = useT();
   const top = ranking.slice(0, 8);
-  const dados = top.map((r) => ({ nome: r.nome, valor: Math.round(r.margemContribuicaoTotal) }));
+  const dados = top.map((r) => ({ id: r.servicoId, nome: r.nome, valor: Math.round(r.margemContribuicaoTotal) }));
   const temEstimativa = top.some((r) => !r.temReceitaReal);
   return (
     <div>
@@ -8981,8 +8968,8 @@ function RankingServicos({ ranking }) {
             contentStyle={{ fontSize: 12, borderRadius: 8, background: t.surface, border: `1px solid ${t.border}`, color: t.text }}
           />
           <Bar dataKey="valor" radius={[0, 4, 4, 0]}>
-            {dados.map((d, i) => (
-              <Cell key={i} fill={d.valor >= 0 ? t.success : t.danger} />
+            {dados.map((d) => (
+              <Cell key={d.id} fill={d.valor >= 0 ? t.success : t.danger} />
             ))}
           </Bar>
         </BarChart>
@@ -9058,6 +9045,7 @@ function OcupacaoXLucro({ ranking }) {
   const t = useT();
   const apenasServicos = ranking.filter((r) => r.tipo !== "produto");
   const dados = apenasServicos.map((r) => ({
+    id: r.servicoId,
     nome: r.nome,
     x: Math.round(r.horasTotaisOcupadas),
     y: Number(r.lucroPorHoraCadeira.toFixed(2)),
@@ -9083,8 +9071,8 @@ function OcupacaoXLucro({ ranking }) {
             contentStyle={{ fontSize: 12, borderRadius: 8, background: t.surface, border: `1px solid ${t.border}`, color: t.text }}
           />
           <Scatter data={dados} fill={t.primary}>
-            {dados.map((d, i) => (
-              <Cell key={i} fill={d.y >= 0 ? t.primary : t.danger} />
+            {dados.map((d) => (
+              <Cell key={d.id} fill={d.y >= 0 ? t.primary : t.danger} />
             ))}
           </Scatter>
         </ScatterChart>
@@ -9493,9 +9481,9 @@ function FaixaPrecos({ seu, piso, observacoes, med }) {
           title={`Mediana: ${fmtBRL(med)}`}
           style={{ left: pos(med), background: t.secondaryText, transition: "left .4s ease" }}
         />
-        {observacoes.map((o, i) => (
+        {observacoes.map((o) => (
           <div
-            key={o.concorrente.id + i}
+            key={o.concorrente.id}
             className="absolute top-1/2 rounded-full pop-in"
             title={`${o.concorrente.nome}: ${fmtBRL(o.valor)}`}
             style={{
@@ -10501,8 +10489,8 @@ function Observatorio({ servicos, nd, cidadePerfil }) {
                   contentStyle={{ fontSize: 12, borderRadius: 8, background: t.surface, border: `1px solid ${t.border}`, color: t.text }}
                 />
                 <Bar dataKey="total" radius={[4, 4, 0, 0]}>
-                  {porBairro.map((_, i) => (
-                    <Cell key={i} fill={i % 2 === 0 ? t.primary : t.secondary} />
+                  {porBairro.map((b, i) => (
+                    <Cell key={b.nome} fill={i % 2 === 0 ? t.primary : t.secondary} />
                   ))}
                 </Bar>
               </BarChart>
@@ -11050,8 +11038,8 @@ function BlocoResposta({ bloco }) {
   if (bloco.tipo === "lista") {
     return (
       <ul className="my-2 space-y-1.5 pl-0.5">
-        {bloco.itens.map((item, i) => (
-          <li key={i} className="text-sm leading-relaxed flex gap-2" style={{ color: t.textMuted }}>
+        {bloco.itens.map((item) => (
+          <li key={item.titulo} className="text-sm leading-relaxed flex gap-2" style={{ color: t.textMuted }}>
             <span className="shrink-0" style={{ color: t.primaryText }}>
               •
             </span>
@@ -11212,6 +11200,7 @@ function PainelExplicacao({ faqId, onFechar, onVerFaq }) {
       )}
     >
       {pergunta.blocos.map((bloco, i) => (
+        // biome-ignore lint/suspicious/noArrayIndexKey: texto fixo do FAQ, que nunca é reordenado nem editado
         <BlocoResposta key={i} bloco={bloco} />
       ))}
     </PainelFolha>
@@ -11275,8 +11264,8 @@ function PainelDocumentoLegal({ documento, onFechar }) {
             {s.paragrafos.map(paragrafo)}
             {s.itens && (
               <ul className="list-disc pl-5 space-y-1 mb-1.5 text-sm leading-relaxed" style={{ color: t.text }}>
-                {s.itens.map((item, i) => (
-                  <li key={i}>{item}</li>
+                {s.itens.map((item) => (
+                  <li key={item}>{item}</li>
                 ))}
               </ul>
             )}
@@ -11349,7 +11338,7 @@ function TelaAceite({ atualizacao, onAceitar, onLer }) {
         {RESUMO_ACEITE.map((texto, i) => {
           const Icone = ICONES_RESUMO_ACEITE[i] || Info;
           return (
-            <li key={i} className="flex items-start gap-3 text-sm" style={{ color: t.text }}>
+            <li key={texto} className="flex items-start gap-3 text-sm" style={{ color: t.text }}>
               <span
                 className="shrink-0 rounded-full flex items-center justify-center"
                 style={{ width: 28, height: 28, background: t.primarySoft, color: t.primaryText }}
@@ -11550,6 +11539,7 @@ function FaqItem({ id, pergunta, blocos, aberto, onToggle, destaque }) {
       {aberto && (
         <div className="pop-in px-4 pb-4" style={{ borderTop: `1px solid ${t.border}`, paddingTop: 12 }}>
           {blocos.map((bloco, i) => (
+            // biome-ignore lint/suspicious/noArrayIndexKey: texto fixo do FAQ, que nunca é reordenado nem editado
             <BlocoResposta key={i} bloco={bloco} />
           ))}
         </div>
