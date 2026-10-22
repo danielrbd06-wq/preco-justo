@@ -925,7 +925,8 @@ function LogoMark({ size = 40 }) {
 function LogoWordmark({ stacked = false, size = "text-2xl" }) {
   const t = useT();
   return (
-    <div className={stacked ? "text-center" : ""} style={{ lineHeight: 1.05 }}>
+    // data-logotipo: cores da marca; logotipo é exceção da regra de contraste (WCAG 1.4.3).
+    <div className={stacked ? "text-center" : ""} style={{ lineHeight: 1.05 }} data-logotipo="">
       <span className={`font-poppins font-bold ${size}`} style={{ color: t.text, display: stacked ? "block" : "inline" }}>
         Preço
       </span>
@@ -1132,7 +1133,7 @@ function useToast() {
 /* ======================================================================= */
 /* App                                                                      */
 /* ======================================================================= */
-const VERSAO_APP = "v7.24";
+const VERSAO_APP = "v7.25";
 const CHAVE_TEMA = "preco-justo:tema";
 
 /* Rede de segurança: se qualquer aba travar por um motivo que eu não       */
@@ -1956,29 +1957,33 @@ function CampoPct({ label, value, onChange, ajuda, faq }) {
 function SecaoColapsavel({ titulo, icon: Icon, ajuda, faq, resumo, abertoInicial = false, children }) {
   const t = useT();
   const [aberto, setAberto] = useState(abertoInicial);
+  // Bloco 20: o botão cobre o cabeçalho inteiro e o "?" fica por cima dele, como
+  // irmão. Antes o "?" ficava dentro do botão (controle dentro de controle), o que
+  // confunde leitores de tela. O visual continua igual: o "?" acompanha a última
+  // palavra do título quando ele quebra em duas linhas.
+  const rotulo = !aberto && typeof resumo === "string" && resumo ? `${titulo} — ${resumo}` : titulo;
   return (
     <div className="rounded-xl" style={{ border: `1px solid ${t.border}`, overflow: "hidden" }}>
-      <button
-        type="button"
-        onClick={() => setAberto((v) => !v)}
-        className="btn-press touch-target flex items-center justify-between w-full px-3 py-2.5"
-        aria-expanded={aberto}
-      >
-        <span className="flex items-center gap-1.5 min-w-0">
-          {Icon && <Icon size={14} style={{ color: t.primaryText, flexShrink: 0 }} />}
-          {/* O "?" fica dentro do título para acompanhar a última palavra quando ele quebra */}
-          {/* em duas linhas; como irmão no flex, ia parar longe do texto, junto da seta.    */}
+      <div className="btn-press relative flex items-center justify-between w-full px-3 py-2.5">
+        <button
+          type="button"
+          onClick={() => setAberto((v) => !v)}
+          aria-expanded={aberto}
+          aria-label={rotulo}
+          className="absolute inset-0 w-full"
+        />
+        <span className="pointer-events-none flex items-center gap-1.5 min-w-0">
+          {Icon && <Icon size={14} style={{ color: t.primaryText, flexShrink: 0 }} aria-hidden="true" />}
           <span className="text-sm font-semibold text-left leading-snug min-w-0" style={{ color: t.text }}>
-            {titulo}
+            <span aria-hidden="true">{titulo}</span>
             {ajuda && (
-              // biome-ignore lint/a11y/useKeyWithClickEvents lint/a11y/noStaticElementInteractions: só impede que o "?" abra ou feche a seção
-              <span onClick={(e) => e.stopPropagation()}>
+              <span className="pointer-events-auto relative">
                 <Ajuda texto={ajuda} faq={faq} />
               </span>
             )}
           </span>
         </span>
-        <span className="flex items-center gap-2 min-w-0">
+        <span className="pointer-events-none flex items-center gap-2 min-w-0" aria-hidden="true">
           {!aberto && resumo && (
             <span className="text-[11px] truncate max-w-[42vw] min-w-0" style={{ color: t.textMuted }}>
               {resumo}
@@ -1989,7 +1994,7 @@ function SecaoColapsavel({ titulo, icon: Icon, ajuda, faq, resumo, abertoInicial
             style={{ color: t.textMuted, flexShrink: 0, transform: aberto ? "rotate(180deg)" : "none", transition: "transform .2s ease" }}
           />
         </span>
-      </button>
+      </div>
       {aberto && <div className="pop-in px-3 pb-3">{children}</div>}
     </div>
   );
@@ -2818,7 +2823,7 @@ function OnboardingPerfil({ onConcluir }) {
                 style={{
                   width: 22,
                   height: 22,
-                  background: passo >= p.id ? t.primary : t.surfaceAlt,
+                  background: passo >= p.id ? t.primaryText : t.surfaceAlt,
                   color: passo >= p.id ? t.onPrimary : t.textMuted,
                 }}
               >
@@ -3572,9 +3577,9 @@ function Negocio({ negocio, onSalvar, servicos, onCarregarExemplo }) {
                 onClick={() => setN({ ...n, regime: r.id })}
                 className="btn-press rounded-lg px-3 py-1.5 text-xs font-medium"
                 style={{
-                  background: n.regime === r.id ? t.primary : t.surfaceAlt,
+                  background: n.regime === r.id ? t.primaryText : t.surfaceAlt,
                   color: n.regime === r.id ? t.onPrimary : t.textMuted,
-                  border: `1px solid ${n.regime === r.id ? t.primary : t.border}`,
+                  border: `1px solid ${n.regime === r.id ? t.primaryText : t.border}`,
                 }}
               >
                 {r.label}
@@ -3815,7 +3820,7 @@ function ItemInsumoCompartilhado({ item, onChange, onRemove }) {
             aria-selected={modo === m.id}
             onClick={() => setCampo("modo", m.id)}
             className="btn-press flex-1 rounded-md py-1 text-[10.5px] font-medium"
-            style={{ background: modo === m.id ? t.primary : "transparent", color: modo === m.id ? t.onPrimary : t.textMuted }}
+            style={{ background: modo === m.id ? t.primaryText : "transparent", color: modo === m.id ? t.onPrimary : t.textMuted }}
           >
             {m.label}
           </button>
@@ -3967,7 +3972,7 @@ function ItemCustoVariavel({ item, onChange, onRemove, contexto }) {
             aria-selected={modo === m.id}
             onClick={() => setCampo("modo", m.id)}
             className="btn-press flex-1 rounded-md py-1 text-[10.5px] font-medium"
-            style={{ background: modo === m.id ? t.primary : "transparent", color: modo === m.id ? t.onPrimary : t.textMuted }}
+            style={{ background: modo === m.id ? t.primaryText : "transparent", color: modo === m.id ? t.onPrimary : t.textMuted }}
           >
             {m.label}
           </button>
@@ -5156,32 +5161,29 @@ function AbasServicos({ servicos, servicoAtivoId, onSelecionar, onNovo }) {
   const t = useT();
   if (!servicos || servicos.length === 0) return null;
   return (
-    <div
-      className="flex gap-1.5 overflow-x-auto pb-2 mb-3"
-      style={{ WebkitOverflowScrolling: "touch" }}
-      role="tablist"
-      aria-label="Serviços cadastrados"
-    >
-      {servicos.map((s) => {
-        const ativo = servicoAtivoId === s.id;
-        return (
-          <button
-            type="button"
-            key={s.id}
-            role="tab"
-            aria-selected={ativo}
-            onClick={() => onSelecionar(s)}
-            className="btn-press shrink-0 rounded-lg px-3 py-1.5 text-xs font-medium whitespace-nowrap"
-            style={{
-              background: ativo ? t.primary : t.surfaceAlt,
-              color: ativo ? t.onPrimary : t.textMuted,
-              border: `1px solid ${ativo ? t.primary : t.border}`,
-            }}
-          >
-            {s.nome}
-          </button>
-        );
-      })}
+    <div className="flex gap-1.5 overflow-x-auto pb-2 mb-3" style={{ WebkitOverflowScrolling: "touch" }}>
+      <div className="flex gap-1.5" role="tablist" aria-label="Serviços cadastrados">
+        {servicos.map((s) => {
+          const ativo = servicoAtivoId === s.id;
+          return (
+            <button
+              type="button"
+              key={s.id}
+              role="tab"
+              aria-selected={ativo}
+              onClick={() => onSelecionar(s)}
+              className="btn-press shrink-0 rounded-lg px-3 py-1.5 text-xs font-medium whitespace-nowrap"
+              style={{
+                background: ativo ? t.primaryText : t.surfaceAlt,
+                color: ativo ? t.onPrimary : t.textMuted,
+                border: `1px solid ${ativo ? t.primaryText : t.border}`,
+              }}
+            >
+              {s.nome}
+            </button>
+          );
+        })}
+      </div>
       <button
         type="button"
         onClick={onNovo}
@@ -5225,7 +5227,7 @@ function BarraProgressoWizard({ passo, onIr }) {
               style={{
                 width: 24,
                 height: 24,
-                background: passo >= p.id ? t.primary : t.surfaceAlt,
+                background: passo >= p.id ? t.primaryText : t.surfaceAlt,
                 color: passo >= p.id ? t.onPrimary : t.textMuted,
                 border: passo === p.id ? `2px solid ${t.primaryText}` : "1px solid transparent",
               }}
@@ -11180,7 +11182,9 @@ function PainelFolha({ tituloId, cabecalho, rodape, onFechar, dispensavel = true
             </button>
           )}
         </div>
-        <div className="px-5 py-4 overflow-y-auto" style={{ overscrollBehavior: "contain" }}>
+        {/* tabIndex 0: dá para rolar o texto pelo teclado (setas, Page Down). */}
+        {/* biome-ignore lint/a11y/noNoninteractiveTabindex: área rolável precisa de foco para ser lida pelo teclado (WCAG 2.1.1) */}
+        <div className="px-5 py-4 overflow-y-auto rounded-sm" style={{ overscrollBehavior: "contain" }} tabIndex={0}>
           {children}
         </div>
         {rodape && (
@@ -11229,7 +11233,7 @@ function PainelExplicacao({ faqId, onFechar, onVerFaq }) {
             type="button"
             onClick={() => fechar()}
             className="btn-press rounded-xl px-4 py-2 text-xs font-semibold"
-            style={{ background: t.primary, color: t.onPrimary }}
+            style={{ background: t.primaryText, color: t.onPrimary }}
           >
             Entendi, voltar
           </button>
@@ -11285,7 +11289,7 @@ function PainelDocumentoLegal({ documento, onFechar }) {
             type="button"
             onClick={() => fechar()}
             className="btn-press rounded-xl px-4 py-2 text-xs font-semibold shrink-0"
-            style={{ background: t.primary, color: t.onPrimary }}
+            style={{ background: t.primaryText, color: t.onPrimary }}
           >
             Voltar
           </button>
@@ -11357,7 +11361,7 @@ function TelaAceite({ atualizacao, onAceitar, onLer }) {
             }}
             className="btn-press w-full rounded-xl px-4 py-3 text-sm font-semibold inline-flex items-center justify-center gap-2"
             style={{
-              background: marcado ? t.primary : t.surfaceAlt,
+              background: marcado ? t.primaryText : t.surfaceAlt,
               color: marcado ? t.onPrimary : t.textMuted,
               cursor: marcado ? "pointer" : "not-allowed",
             }}
