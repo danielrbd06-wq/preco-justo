@@ -54,6 +54,8 @@ Antes de finalizar, revise a interface como **designer de produto sênior** e co
 
 - **React 18 + Vite 5 + Tailwind CSS 3**, fonte **Poppins** local (`@fontsource/poppins`), gráficos com **Recharts**, ícones **lucide-react**, exportação Excel com **xlsx**, mapa com **Leaflet** 1.9.4 sobre o **OpenStreetMap**.
 - PWA via **vite-plugin-pwa** (instalável, funciona offline).
+- **Carregamento (Bloco 18):** a biblioteca do Excel é carregada só quando a pessoa pede uma planilha (`carregarXLSX()`, com desestruturação para o build levar só o que é usado), e o mapa é carregado só no Observatório (`React.lazy`). React e gráficos ficam em arquivos próprios (`manualChunks` no `vite.config.js`). Botões de ação demorada usam **`useAcaoComProgresso`** (evita clique duplo e mostra "Gerando…"). Hooks sempre antes de qualquer `return` condicional; o Biome acusa se não estiverem.
+- **Orçamento de tamanho (Bloco 18):** `npm run orcamento` (depois do build; também roda no CI) mede os arquivos compactados: primeira tela ≤ 270 KB, maior arquivo ≤ 130 KB, total ≤ 450 KB. Biblioteca nova e grande deve ser carregada sob demanda; aumentar um limite só com justificativa no PR.
 - Telas e componentes em `src/App.jsx` (~12.300 linhas depois da formatação do Bloco 15), com componentes reutilizáveis definidos no próprio arquivo.
 - **Contas em `src/calculos.js`** (funções puras, sem React): leitura de valores, Simples Nacional, motores de preço (Modo A e B), custos variáveis, comissão e taxa médias, DRE, pontos de equilíbrio, pacote e comparação com a concorrência. Testadas em `src/calculos.test.js`.
 - `src/MapaConcorrencia.jsx`: mapa do Observatório, carregado sob demanda (`React.lazy`) para o Leaflet não pesar no resto do app.
@@ -84,6 +86,7 @@ As melhorias foram organizadas em **blocos** (os 7 da análise inicial e os segu
 | 15 | Biome (lint e formatação) no CI, código todo formatado, 16 testes de casos-limite e piso de cobertura com ramos (calculos.js: 71,8% → 92,9% dos ramos) | ✅ Implementado (`docs/bloco-15-issue-e-pr.md`) |
 | 16 | Régua única com parceiros (opção C): Evolução, sazonalidade, anomalia e projeção na receita do salão; equivalência em valor cobrado na escada, no memorial e no Excel; linha do ponto de equilíbrio sempre visível no gráfico | ✅ Implementado (`docs/bloco-16-issue-e-pr.md`) |
 | 17 | Os 23 avisos do Biome revisados (17 corrigidos, 6 justificados) e regras de volta a erro; rascunhos do serviço novo e do fechamento com `useRascunho` | ✅ Implementado (`docs/bloco-17-issues-e-pr.md`) |
+| 18 | Excel carregado sob demanda, React e gráficos em arquivos próprios, orçamento de tamanho no CI (primeira tela: 354 → 259 KB compactados) | ✅ Implementado (`docs/bloco-18-issue-e-pr.md`) |
 
 ### Esteira de qualidade (Bloco 8) — vale para toda mudança
 - **Toda conta nova ou alterada vai para `src/calculos.js`, com teste em `src/calculos.test.js`.** Os valores esperados devem ser conferidos à mão e explicados no teste. Caminhos de dado faltando ou zerado também ganham teste (bloco "casos-limite"). Piso de cobertura de `calculos.js`, `copiaSeguranca.js` e `termos.js` (Bloco 15): **95% das linhas, 90% das funções e 85% dos ramos**; abaixo disso, a verificação falha.

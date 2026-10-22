@@ -59,7 +59,6 @@ import {
   YAxis,
   ZAxis,
 } from "recharts";
-import * as XLSX from "xlsx";
 import {
   ANEXO_III,
   aliquotaEfetiva,
@@ -1083,6 +1082,34 @@ function SkeletonCard() {
   );
 }
 
+/* Bloco 18: a biblioteca do Excel (a maior do app) só é baixada quando a pessoa */
+/* pede uma planilha. O service worker do PWA a guarda depois, para uso offline. */
+/* A desestruturação direta deixa o build levar só as partes usadas da biblioteca. */
+async function carregarXLSX() {
+  const { utils, writeFile } = await import("xlsx");
+  return { utils, writeFile };
+}
+
+/* Ação demorada de um botão: evita clique duplo e informa o progresso. */
+function useAcaoComProgresso(acao) {
+  const [ocupado, setOcupado] = useState(false);
+  const ocupadoRef = useRef(false);
+  const acaoRef = useRef(acao);
+  acaoRef.current = acao;
+  const executar = useCallback(async () => {
+    if (ocupadoRef.current) return;
+    ocupadoRef.current = true;
+    setOcupado(true);
+    try {
+      await acaoRef.current();
+    } finally {
+      ocupadoRef.current = false;
+      setOcupado(false);
+    }
+  }, []);
+  return [executar, ocupado];
+}
+
 function useToast() {
   const t = useT();
   const [toast, setToast] = useState(null);
@@ -1105,7 +1132,7 @@ function useToast() {
 /* ======================================================================= */
 /* App                                                                      */
 /* ======================================================================= */
-const VERSAO_APP = "v7.23";
+const VERSAO_APP = "v7.24";
 const CHAVE_TEMA = "preco-justo:tema";
 
 /* Rede de segurança: se qualquer aba travar por um motivo que eu não       */
@@ -6667,6 +6694,10 @@ function Painel({ nd, negocio, servicos, onRemoverServico, onEditarServico }) {
   // e o React acusa "Rendered more hooks than during the previous render". Hooks sempre
   // antes de qualquer return condicional — por isso subiu pra cá, com fallback pra [].
   const servicosCalc = useMemo(() => (servicos || []).map((s) => ({ ...s, calc: calcularParaExibicao(s, nd) })), [servicos, nd]);
+  // Bloco 18: o hook do botão "Baixar Excel" também precisa vir antes dos returns
+  // condicionais; a planilha em si é montada mais abaixo (gerarExcelRef).
+  const gerarExcelRef = useRef(null);
+  const [exportarExcel, gerandoExcel] = useAcaoComProgresso(() => gerarExcelRef.current?.());
 
   if (servicos === null)
     return (
@@ -6714,7 +6745,8 @@ function Painel({ nd, negocio, servicos, onRemoverServico, onEditarServico }) {
     .filter((s) => s.calc.status === "ok")
     .map((s) => ({ name: s.nome, Preço: Math.round(s.calc.preco), Margem: Math.round(s.calc.margemContribuicaoUnitaria) }));
 
-  const exportarExcel = async () => {
+  gerarExcelRef.current = async () => {
+    const XLSX = await carregarXLSX();
     const wb = XLSX.utils.book_new();
     const wsDRE = XLSX.utils.aoa_to_sheet([
       ["DRE gerencial do mês (recalculado com as configurações atuais)", ""],
@@ -6823,7 +6855,7 @@ function Painel({ nd, negocio, servicos, onRemoverServico, onEditarServico }) {
     // Bloco 10: concorrentes e preços anotados no Observatório, quando houver.
     const obs = await lerDadosObservatorio();
     if (obs.concorrentes.length > 0) {
-      anexarAbasObservatorio(wb, linhasPlanilhaObservatorio(obs.concorrentes, obs.meusLocais, servicosCalc, nd));
+      anexarAbasObservatorio(XLSX, wb, linhasPlanilhaObservatorio(obs.concorrentes, obs.meusLocais, servicosCalc, nd));
     }
 
     XLSX.writeFile(wb, `preco-justo-relatorio-${new Date().toISOString().slice(0, 10)}.xlsx`);
@@ -6870,10 +6902,12 @@ function Painel({ nd, negocio, servicos, onRemoverServico, onEditarServico }) {
           <button
             type="button"
             onClick={exportarExcel}
+            disabled={gerandoExcel}
+            aria-busy={gerandoExcel}
             className="btn-press inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold"
-            style={{ background: t.success, color: t.onSuccess }}
+            style={{ background: t.success, color: t.onSuccess, opacity: gerandoExcel ? 0.85 : 1 }}
           >
-            <Download size={13} /> Baixar Excel
+            {gerandoExcel ? <Girando /> : <Download size={13} />} {gerandoExcel ? "Gerando planilha…" : "Baixar Excel"}
           </button>
           <button
             type="button"
@@ -9403,7 +9437,7 @@ async function lerDadosObservatorio() {
     meusLocais: meusLocais && typeof meusLocais === "object" ? meusLocais : {},
   };
 }
-function anexarAbasObservatorio(wb, linhas) {
+function anexarAbasObservatorio(XLSX, wb, linhas) {
   const abas = [
     ["concorrentes", "Concorrentes", [18, 30, 11, 18, 14, 10, 11, 11]],
     ["precos", "Preços anotados", [18, 30, 24, 12, 11, 12, 20, 12]],
@@ -10095,7 +10129,8 @@ function Observatorio({ servicos, nd, cidadePerfil }) {
   );
 
   // Planilha só do Observatório, com todas as cidades (Bloco 10).
-  const baixarPlanilha = () => {
+  const [baixarPlanilha, gerandoPlanilha] = useAcaoComProgresso(async () => {
+    const XLSX = await carregarXLSX();
     const wb = XLSX.utils.book_new();
     const hoje = new Date();
     const sobre = XLSX.utils.aoa_to_sheet([
@@ -10107,13 +10142,13 @@ function Observatorio({ servicos, nd, cidadePerfil }) {
     ]);
     sobre["!cols"] = [{ wch: 110 }];
     XLSX.utils.book_append_sheet(wb, sobre, "Sobre");
-    anexarAbasObservatorio(wb, linhasPlanilhaObservatorio(concorrentes, meusLocais, servicos || [], nd, hoje));
+    anexarAbasObservatorio(XLSX, wb, linhasPlanilhaObservatorio(concorrentes, meusLocais, servicos || [], nd, hoje));
     XLSX.writeFile(
       wb,
       `preco-justo-observatorio-${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, "0")}-${String(hoje.getDate()).padStart(2, "0")}.xlsx`,
     );
     show("Planilha baixada.");
-  };
+  });
 
   const iniciarMarcacao = (m) => {
     setMarcando(m);
@@ -10403,10 +10438,12 @@ function Observatorio({ servicos, nd, cidadePerfil }) {
             <button
               type="button"
               onClick={baixarPlanilha}
+              disabled={gerandoPlanilha}
+              aria-busy={gerandoPlanilha}
               className="btn-press touch-target inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold"
               style={{ background: t.surfaceAlt, color: t.text, border: `1px solid ${t.border}` }}
             >
-              <Download size={13} /> Baixar planilha (Excel)
+              {gerandoPlanilha ? <Girando /> : <Download size={13} />} {gerandoPlanilha ? "Gerando planilha…" : "Baixar planilha (Excel)"}
             </button>
           )}
         </div>

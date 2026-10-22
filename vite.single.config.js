@@ -23,5 +23,7 @@ export default defineConfig({
   build: {
     outDir: "dist-single",
     copyPublicDir: false,
+    // Arquivo único: o Excel carregado sob demanda (Bloco 18) entra junto, sem arquivo à parte.
+    rollupOptions: { output: { inlineDynamicImports: true } },
   },
 });

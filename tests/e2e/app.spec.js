@@ -34,6 +34,14 @@ test("exemplo carregado: Painel mostra o DRE e os pontos de equilíbrio certos",
   await expect(visivel(page, reais("258,37"))).toBeVisible(); // resultado operacional
   await expect(visivel(page, reais("8.390,05"))).toBeVisible(); // ponto de equilíbrio contábil
   await semRolagemLateral(page);
+
+  // Bloco 18: o Excel é carregado só no clique e o relatório sai com as abas certas.
+  const [download] = await Promise.all([page.waitForEvent("download"), page.getByRole("button", { name: "Baixar Excel" }).click()]);
+  expect(download.suggestedFilename()).toMatch(/^preco-justo-relatorio-\d{4}-\d{2}-\d{2}\.xlsx$/);
+  const wb = XLSX.read(readFileSync(await download.path()));
+  expect(wb.SheetNames).toEqual(expect.arrayContaining(["DRE Gerencial", "Indicadores", "Serviços", "Fluxo de Caixa 12m"]));
+  const indicadores = XLSX.utils.sheet_to_json(wb.Sheets.Indicadores, { header: 1 });
+  expect(indicadores[1][1]).toBeCloseTo(8390.05, 2); // ponto de equilíbrio contábil, igual à tela
 });
 
 test("todas as abas abrem sem erro e sem rolagem lateral", async ({ page }) => {
