@@ -38,7 +38,11 @@ Configuração detectada automaticamente pela Vercel: **Framework** Vite, **Buil
 ├── CONTEXTO.md            regras do projeto e fluxo de trabalho
 ├── index.html             página base
 ├── src/
-│   ├── App.jsx            o aplicativo inteiro
+│   ├── App.jsx            casca do app: tema, cabeçalho e abas
+│   ├── telas/             uma pasta ou arquivo por aba (Negócio, Calculadora, Painel…)
+│   ├── componentes/       peças usadas por mais de uma tela
+│   ├── dados/             FAQ, segmentos, exemplo e dados de referência
+│   ├── calculos.js        todas as contas (com testes em calculos.test.js)
 │   ├── main.jsx           ponto de entrada do React
 │   └── index.css          Tailwind
 ├── public/                ícones do PWA

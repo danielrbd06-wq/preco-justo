@@ -55,10 +55,16 @@ Antes de finalizar, revise a interface como **designer de produto sênior** e co
 - **React 18 + Vite 5 + Tailwind CSS 3**, fonte **Poppins** local (`@fontsource/poppins`), gráficos com **Recharts**, ícones **lucide-react**, exportação Excel com **xlsx**, mapa com **Leaflet** 1.9.4 sobre o **OpenStreetMap**.
 - PWA via **vite-plugin-pwa** (instalável, funciona offline).
 - **Carregamento (Bloco 18):** a biblioteca do Excel é carregada só quando a pessoa pede uma planilha (`carregarXLSX()`, com desestruturação para o build levar só o que é usado), e o mapa é carregado só no Observatório (`React.lazy`). React e gráficos ficam em arquivos próprios (`manualChunks` no `vite.config.js`). Botões de ação demorada usam **`useAcaoComProgresso`** (evita clique duplo e mostra "Gerando…"). Hooks sempre antes de qualquer `return` condicional; o Biome acusa se não estiverem.
-- **Orçamento de tamanho (Bloco 18):** `npm run orcamento` (depois do build; também roda no CI) mede os arquivos compactados: primeira tela ≤ 270 KB, maior arquivo ≤ 130 KB, total ≤ 450 KB. Biblioteca nova e grande deve ser carregada sob demanda; aumentar um limite só com justificativa no PR.
-- Telas e componentes em `src/App.jsx` (~12.300 linhas depois da formatação do Bloco 15), com componentes reutilizáveis definidos no próprio arquivo.
+- **Orçamento de tamanho (Bloco 18, apertado no 21):** `npm run orcamento` (depois do build; também roda no CI) mede os arquivos compactados: primeira tela ≤ 150 KB (era 270), maior arquivo ≤ 130 KB, total ≤ 450 KB. Biblioteca nova e grande deve ser carregada sob demanda; aumentar um limite só com justificativa no PR.
+- **Telas e componentes divididos por arquivo (Bloco 21).** Até a v7.25 tudo ficava em `src/App.jsx` (~12.400 linhas); agora:
+  - `src/App.jsx`: só a casca (tema, cabeçalho, abas, folhas por cima da tela).
+  - `src/telas/`: uma pasta ou arquivo por aba — `negocio/` (`Negocio.jsx`, `Onboarding.jsx`), `calculadora/` (`Calculadora.jsx`, `CustosEComissao.jsx`, `Biblioteca.jsx`, `Resultados.jsx`), `painel/` (`Painel.jsx`, `DRECard.jsx`, `FechamentoMensal.jsx`, `Evolucao.jsx`, `ProjecaoCaixa.jsx`, `meses.js`), `Estoque.jsx`, `Observatorio.jsx`, `Faq.jsx`.
+  - `src/componentes/`: peças usadas por mais de uma tela — `base.jsx` (esqueletos, aviso rápido, botão com progresso, selos, semáforo, rede de segurança), `campos.jsx` (campos, "?" e seções), `salvamento.jsx` (salvar sozinho, rascunhos, cópia de segurança), `folhas.jsx` (explicação do FAQ, documentos legais, tela de aceite), `marca.jsx`, `AvisoNovaVersao.jsx`, `GraficoRoscaPreco.jsx`.
+  - `src/dados/`: dados fixos — `faq.js`, `segmentos.js`, `negocio.js` (negócio vazio e exemplo), `referencias.js` (estabelecimentos coletados e referência salarial, com fonte).
+  - Base: `src/tema.js` (cores e `useT`), `src/armazenamento.js` (guardar no aparelho, rascunhos, apagar tudo), `src/planilhas.js` (Excel sob demanda), `src/versao.js` (`VERSAO_APP`).
+- **Abas sob demanda (Bloco 21):** Negócio e Calculadora vêm com o app; Painel, Estoque, Observatório e FAQ (e os gráficos que usam) baixam quando a aba é escolhida (`CARREGAR_ABA` + `React.lazy` no `App.jsx`, com o mesmo esqueleto da troca de aba). O desenho da rosca do preço também (`RoscaPizza.jsx`): a legenda aparece na hora e um anel de carregamento do mesmo tamanho segura o lugar.
 - **Contas em `src/calculos.js`** (funções puras, sem React): leitura de valores, Simples Nacional, motores de preço (Modo A e B), custos variáveis, comissão e taxa médias, DRE, pontos de equilíbrio, pacote e comparação com a concorrência. Testadas em `src/calculos.test.js`.
-- `src/MapaConcorrencia.jsx`: mapa do Observatório, carregado sob demanda (`React.lazy`) para o Leaflet não pesar no resto do app.
+- `src/MapaConcorrencia.jsx`: mapa do Observatório (`src/telas/Observatorio.jsx`), carregado sob demanda (`React.lazy`) para o Leaflet não pesar no resto do app.
 - Persistência: `window.storage` com fallback para `localStorage` (`listarComFallback()`), tudo no dispositivo do usuário.
 - Autenticação com Supabase: **pausada** (não está em uso nesta versão).
 - Deploy: **Vercel**, conectada a este repositório (push na `main` = deploy; cada PR ganha URL de preview).
@@ -89,6 +95,7 @@ As melhorias foram organizadas em **blocos** (os 7 da análise inicial e os segu
 | 18 | Excel carregado sob demanda, React e gráficos em arquivos próprios, orçamento de tamanho no CI (primeira tela: 354 → 259 KB compactados) | ✅ Implementado (`docs/bloco-18-issue-e-pr.md`) |
 | 19 | Knip, Commitlint e teste de mutação (Stryker): 20 testes novos de fórmula; pontuação de mutação das contas 67,7% → 83,9% | ✅ Implementado (`docs/bloco-19-issue-e-pr.md`) |
 | 20 | Teste automático de acessibilidade (axe, WCAG 2.1 AA, 2 temas × 2 tamanhos) e correções: contraste dos botões, "?" fora do botão das seções, abas da Calculadora, rolagem pelo teclado | ✅ Implementado (`docs/bloco-20-issue-e-pr.md`) |
+| 21 | `App.jsx` dividido por tela (12.400 linhas em 32 arquivos; 186 das 189 declarações com o código idêntico, conferido por script) e abas carregadas sob demanda: primeira tela de 259 → 114 KB compactados | ✅ Implementado (`docs/bloco-21-issue-e-pr.md`) |
 
 ### Esteira de qualidade (Bloco 8) — vale para toda mudança
 - **Toda conta nova ou alterada vai para `src/calculos.js`, com teste em `src/calculos.test.js`.** Os valores esperados devem ser conferidos à mão e explicados no teste. Caminhos de dado faltando ou zerado também ganham teste (bloco "casos-limite"). Piso de cobertura de `calculos.js`, `copiaSeguranca.js` e `termos.js` (Bloco 15): **95% das linhas, 90% das funções e 85% dos ramos**; abaixo disso, a verificação falha.
@@ -100,6 +107,14 @@ As melhorias foram organizadas em **blocos** (os 7 da análise inicial e os segu
 - **Teste de mutação (Bloco 19, Stryker):** `npm run test:mutacao` (~6 min) altera as fórmulas de `calculos.js` e mede quantas alterações os testes percebem. Mínimo: **80%** (estava em 67,7%; com os testes de fórmula do Bloco 19, 83,9%). Roda no workflow `mutacao.yml` quando `calculos.js` ou seus testes mudam. Conta nova deve vir com teste que confira a fórmula pela definição (ex.: `expect(r.markup).toBeCloseTo(preco / custoTotal, 10)`), não só o resultado final do exemplo. A `main` deve ter a regra de proteção exigindo a verificação **"Testes e build"** antes do merge.
 - Rodar localmente: `npm test` (contas), `npm run test:cobertura`, `npm run build && npm run test:e2e` (navegador; na primeira vez, `npx playwright install chromium`).
 - Se um teste falhar porque a conta mudou de propósito, atualize o valor esperado **no mesmo PR** e explique a mudança na descrição.
+
+### Onde fica cada coisa (Bloco 21) — vale para todo código novo
+- **Não volte a juntar tudo no `App.jsx`.** Código de uma aba vai no arquivo dela, em `src/telas/`. Peça que passa a ser usada por uma segunda tela sobe para `src/componentes/` (procure lá antes de criar uma nova). Contas continuam em `src/calculos.js`; dados fixos, em `src/dados/`.
+- Arquivo de tela passou de ~1.500 linhas? Divida pelas seções da tela, como em `telas/painel/`.
+- Sem importação circular: tela importa de `componentes/`, `dados/` e da base; `componentes/` não importa de `telas/`.
+- Aba nova entra em `CARREGAR_ABA` (sob demanda), a não ser que seja a primeira tela. Biblioteca grande nova só dentro de arquivo carregado sob demanda; o orçamento de 150 KB da primeira tela acusa no CI se escapar.
+- `tests/e2e/sob-demanda.spec.js` confere que a primeira tela não baixa gráficos nem as abas não escolhidas.
+- A cada bloco, `VERSAO_APP` sobe em `src/versao.js`.
 
 ### Acessibilidade (Bloco 20) — vale para toda tela nova
 - `tests/e2e/acessibilidade.spec.js` roda o axe-core (WCAG 2.1 A e AA) nas telas principais, nos temas claro e escuro, no celular e no computador. Tela ou estado novo importante entra nessa lista. Ficam fora só o logotipo (`data-logotipo`, exceção de logotipo da WCAG 1.4.3) e o mapa do Leaflet.

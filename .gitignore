@@ -20,3 +20,7 @@ Thumbs.db
 # relatórios do teste de mutação (Stryker)
 reports/
 .stryker-tmp/
+
+# Resultados locais do Playwright
+test-results/
+playwright-report/
