@@ -43,6 +43,9 @@ jobs:
           npm run build
           npm run build:single
 
+      - name: Orçamento de tamanho (primeira tela leve no celular)
+        run: npm run orcamento
+
       - name: Instalar o navegador dos testes
         run: npx playwright install --with-deps chromium
 

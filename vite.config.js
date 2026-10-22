@@ -36,6 +36,25 @@ export default defineConfig({
       },
     }),
   ],
+  // Bloco 18: bibliotecas em arquivos próprios. Numa versão nova do app, quem já
+  // instalou baixa só o que mudou (o código do app), não React e gráficos de novo.
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (!id.includes("node_modules")) return undefined;
+          if (/node_modules\/(react|react-dom|scheduler)\//.test(id)) return "react";
+          if (
+            /node_modules\/(recharts|d3-[a-z-]+|victory-vendor|lodash|react-smooth|recharts-scale|decimal\.js-light|eventemitter3|internmap|fast-equals|tiny-invariant|clsx)\//.test(
+              id,
+            )
+          )
+            return "graficos";
+          return undefined;
+        },
+      },
+    },
+  },
   // Testes unitários (Vitest). Os testes de navegador ficam em tests/e2e (Playwright).
   test: {
     include: ["src/**/*.test.js"],

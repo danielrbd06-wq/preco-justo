@@ -8,6 +8,7 @@
     "dev": "vite",
     "build": "vite build",
     "build:single": "vite build --config vite.single.config.js",
+    "orcamento": "node scripts/orcamento-tamanho.mjs",
     "preview": "vite preview",
     "test": "vitest run",
     "test:cobertura": "vitest run --coverage",
