@@ -8,8 +8,8 @@ import { aceitarTermos, primeiroAcesso } from "./ajuda.js";
 
 const irPara = (page, aba) => page.getByRole("button", { name: aba }).first().click();
 const abrirSecao = async (page, titulo) => {
-  const botao = page.getByRole("button").filter({ hasText: titulo }).first();
-  if ((await botao.getAttribute("aria-expanded")) === "false") await botao.click();
+  const botao = page.getByRole("button", { name: new RegExp(`^${titulo}`) }).first();
+  if ((await botao.getAttribute("aria-expanded")) === "false") await botao.click({ position: { x: 16, y: 12 } });
 };
 
 test.beforeEach(async ({ page }) => {
