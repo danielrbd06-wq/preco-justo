@@ -1,0 +1,44 @@
+# Teste de mutação (Bloco 19): altera de propósito as fórmulas de src/calculos.js
+# (troca "+" por "−", ">" por ">=" etc.) e confere se os testes percebem. Roda só
+# quando as contas ou os testes delas mudam, porque leva cerca de 6 minutos.
+name: Mutação
+
+on:
+  pull_request:
+    branches: [main]
+    paths: ["src/calculos.js", "src/calculos.test.js", "stryker.config.json"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mutacao-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  mutacao:
+    name: Teste de mutação das contas
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Instalar dependências
+        run: npm ci
+
+      - name: Stryker (mínimo de 80% das mutações percebidas pelos testes)
+        run: npm run test:mutacao
+
+      - name: Guardar o relatório
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: relatorio-mutacao
+          path: reports/mutacao/
+          retention-days: 14

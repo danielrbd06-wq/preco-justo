@@ -35,6 +35,7 @@ import {
   parceiroValido,
   parcelaParceiro,
   pisoDoServico,
+  pontoEquilibrioSemanal,
   posicaoNaConcorrencia,
   precoUnitarioItem,
   receitaDoSalao,
@@ -408,7 +409,11 @@ describe("planilha do Observatório (Bloco 10)", () => {
     expect(feira[2]).toBeCloseTo(20.22, 2);
     expect(feira[3]).toBeCloseTo(11.93, 2);
     expect(feira[4]).toBe(2); // Barbearia A conta uma vez só (R$ 25, a mais recente)
+    expect(feira[5]).toBe(25); // menor
     expect(feira[6]).toBe(27.5); // mediana de 25 e 30
+    expect(feira[7]).toBe(30); // maior
+    // diferença para a mediana, em %, com uma casa: (20,22 − 27,50) ÷ 27,50 ≈ −26,5%
+    expect(feira[8]).toBe(-26.5);
     expect(feira[9]).toBe("abaixo de todos");
     expect(feira[10]).toBe(1); // o de R$ 30 é de março: mais de 6 meses
     const irara = linhas.comparacao.find((l) => l[0] === "Irará");
@@ -721,5 +726,360 @@ describe("casos-limite (Bloco 15)", () => {
     expect(r.concorrentes[1]).toEqual(["Irará", "X", "Salão", "", null, 1, null, null]);
     expect(r.precos[1]).toEqual(["Irará", "X", "Corte", "Não", 20, "01/10/2026", "Outro", 15]);
     expect(r.comparacao.length).toBe(1); // sem negócio configurado, não há comparação
+  });
+});
+
+/* Bloco 19: cada fórmula conferida pela própria definição. Estes testes fecham  */
+/* os buracos que o teste de mutação (Stryker) achou: trocar um "+" por "−", um   */
+/* ">" por ">=" ou apagar uma condição nas contas agora derruba algum teste.      */
+describe("fórmulas conferidas uma a uma (Bloco 19)", () => {
+  const nd = computeNegocioDerivado(negocioExemplo());
+  const [corte, escova] = servicosExemplo();
+
+  it("Simples: limites das faixas e do regime (LC 123/2006)", () => {
+    // R$ 180.000 ainda é a 1ª faixa; logo acima, a 2ª faixa dá praticamente os mesmos 6%.
+    expect(aliquotaEfetiva(180000, ANEXO_III).faixaIdx).toBe(0);
+    expect(aliquotaEfetiva(180000.01, ANEXO_III).faixaIdx).toBe(1);
+    expect(aliquotaEfetiva(180000.01, ANEXO_III).aliqEfetiva).toBeCloseTo(0.06, 6);
+    // R$ 4,8 milhões ainda é Simples: (4.800.000 × 33% − 648.000) ÷ 4.800.000 = 19,5%
+    expect(aliquotaEfetiva(4800000, ANEXO_III).aliqEfetiva).toBeCloseTo(0.195, 10);
+    expect(aliquotaEfetiva(4800000.01, ANEXO_III)).toBeNull();
+  });
+
+  it("Fator R de exatamente 28% já vai para o Anexo III", () => {
+    const base = { ...negocioExemplo(), atividadeSempreAnexoIII: false, rbt12: "100000" };
+    expect(computeNegocioDerivado({ ...base, folha12: "28000" }).anexoUsado).toBe("III");
+    expect(computeNegocioDerivado({ ...base, folha12: "27999" }).anexoUsado).toBe("V");
+  });
+
+  it("MEI: o DAS entra no custo fixo, não há imposto sobre o preço e não há salão-parceiro", () => {
+    const n = computeNegocioDerivado({ ...negocioExemplo(), regime: "mei", meiDas: "75.90" });
+    expect(n.meiDas).toBeCloseTo(75.9, 10);
+    expect(n.custoFixoTotal).toBeCloseTo(n.custosFixosSoma + 2200 + 75.9, 10);
+    expect(n.impostoPct).toBe(0);
+    expect(n.parceriaPermitida).toBe(false);
+    // No Simples, o DAS-MEI digitado é ignorado.
+    expect(computeNegocioDerivado({ ...negocioExemplo(), meiDas: "75.90" }).meiDas).toBe(0);
+  });
+
+  it("depreciação: entra no custo fixo e é o que separa o ponto de equilíbrio financeiro do contábil", () => {
+    const comDepreciacao = negocioExemplo();
+    comDepreciacao.custosFixos = comDepreciacao.custosFixos.map((c) => (c.id === "d" ? { ...c, valor: "150" } : c));
+    const n = computeNegocioDerivado(comDepreciacao);
+    expect(n.custoFixoNaoCaixa).toBe(150);
+    expect(n.custoFixoTotal).toBe(900 + 280 + 180 + 150 + 2200);
+    const sc = comCalc(servicosExemplo(), n);
+    const dre = montarDRE(sc, n);
+    const ind = calcularIndicadoresGerenciais(
+      sc.filter((x) => x.calc.status === "ok"),
+      dre,
+      n,
+      negocioExemplo(),
+    );
+    expect(ind.peContabilRS).toBeCloseTo(dre.custosFixosLiquidos / dre.rcm, 8);
+    expect(ind.peFinanceiroRS).toBeCloseTo((dre.custosFixosLiquidos - 150) / dre.rcm, 8);
+    expect(ind.peContabilRS - ind.peFinanceiroRS).toBeCloseTo(150 / dre.rcm, 8);
+  });
+
+  it("aluguel de cadeira: só de quem está ativo e aluga, e abate o custo fixo a cobrir", () => {
+    const n = computeNegocioDerivado({
+      ...negocioExemplo(),
+      profissionais: [
+        { id: "a", nome: "A", vinculo: "aluguel", aluguelMes: "600" },
+        { id: "b", nome: "B", vinculo: "aluguel", aluguelMes: "500", ativo: false },
+        { id: "c", nome: "C", vinculo: "comissao", comissaoPct: "30", aluguelMes: "999" },
+      ],
+    });
+    expect(n.receitaAluguelCadeiras).toBe(600);
+    expect(n.custoFixoLiquido).toBe(n.custoFixoTotal - 600);
+    expect(n.custoFixoPorHora).toBeCloseTo(n.custoFixoLiquido / n.horasTotais, 10);
+    const dre = montarDRE(comCalc(servicosExemplo(), n), n);
+    expect(dre.custosFixosLiquidos).toBe(n.custoFixoTotal - 600);
+  });
+
+  it("capacidade: sem número de profissionais conta 1; sem custo fixo ou sem horas, o negócio não está configurado", () => {
+    expect(computeNegocioDerivado({ ...negocioExemplo(), numeroProfissionais: "0" }).numeroProfissionais).toBe(1);
+    expect(computeNegocioDerivado({ ...negocioExemplo(), numeroProfissionais: "" }).horasTotais).toBe(26 * 8);
+    expect(computeNegocioDerivado({ ...negocioExemplo(), diasMes: "0" }).configurado).toBe(false);
+    expect(computeNegocioDerivado({ ...negocioExemplo(), custosFixos: [], proLabore: "0" }).configurado).toBe(false);
+    expect(computeNegocioDerivado({ ...negocioExemplo(), custosFixos: [] }).configurado).toBe(false);
+    expect(computeNegocioDerivado({ ...negocioExemplo(), horasDia: "0" }).custoFixoPorHora).toBe(0);
+    const semNada = computeNegocioDerivado({ ...negocioExemplo(), perfil: undefined, insumosCompartilhados: undefined });
+    expect(semNada.perfil).toBeNull();
+    expect(semNada.insumosCompartilhados).toEqual([]);
+  });
+
+  it("ponto de equilíbrio semanal: mensal ÷ (365,25 ÷ 12 ÷ 7) semanas", () => {
+    expect(pontoEquilibrioSemanal(100)).toBeCloseTo(100 / (365.25 / 12 / 7), 10);
+    expect(pontoEquilibrioSemanal(Number.POSITIVE_INFINITY)).toBe(Number.POSITIVE_INFINITY);
+  });
+
+  it("Modo A: margem em R$, lucro do mês e ponto de equilíbrio do serviço", () => {
+    const r = calcularServico(corte, nd);
+    expect(r.valorMargem).toBeCloseTo(r.preco * 0.25, 10);
+    expect(r.lucroProjetadoMes).toBeCloseTo(r.valorMargem * 120, 8);
+    expect(r.pontoEquilibrioServico).toBeCloseTo(nd.custoFixoLiquido / r.margemContribuicaoUnitaria, 8);
+    // Só custo fixo (sem material) ainda gera preço; só sem material E sem tempo é "sem-custo".
+    expect(calcularServico({ ...corte, custosVariaveis: [] }, nd).status).toBe("ok");
+    expect(calcularServico({ ...corte, horasPorAtendimento: 0 }, nd).status).toBe("ok");
+  });
+
+  it("Modo B: cada número do preço já cobrado, pela definição", () => {
+    const preco = 30;
+    const r = calcularReverso({ ...corte, precoCobrado: preco, margemMetaPct: 25 }, nd);
+    const horas = 0.5;
+    const custoFixo = nd.custoFixoPorHora * horas;
+    const comissao = preco * 0.3;
+    const taxa = preco * 0.03;
+    const imposto = preco * (nd.impostoPct / 100);
+    const custoTotal = custoFixo + 3 + comissao + taxa + imposto;
+    const lucro = preco - custoTotal;
+    expect(r.lucroLiquido).toBeCloseTo(lucro, 10);
+    expect(r.lucroBruto).toBeCloseTo(preco - 3, 10);
+    expect(r.markup).toBeCloseTo(preco / custoTotal, 10);
+    expect(r.lucroPorHora).toBeCloseTo(lucro / horas, 10);
+    const mcu = preco - 3 - comissao - taxa - imposto;
+    expect(r.margemContribuicaoUnitaria).toBeCloseTo(mcu, 10);
+    expect(r.pontoEquilibrioServico).toBeCloseTo(nd.custoFixoLiquido / mcu, 8);
+    const somaSemMargem = 30 + 3 + nd.impostoPct;
+    expect(r.precoMinimo).toBeCloseTo((custoFixo + 3) / (1 - somaSemMargem / 100), 10);
+    expect(r.precoIdeal).toBeCloseTo((custoFixo + 3) / (1 - (somaSemMargem + 25) / 100), 10);
+    expect(r.lucroProjetadoMes).toBeCloseTo(lucro * 120, 8);
+    // Margem de contribuição negativa: ponto de equilíbrio impossível.
+    expect(calcularReverso({ ...corte, precoCobrado: 2, margemMetaPct: 25 }, nd).pontoEquilibrioServico).toBe(Number.POSITIVE_INFINITY);
+  });
+
+  it("Modo B com parceira: a cota-parte é parte do preço", () => {
+    const n = computeNegocioDerivado({
+      ...negocioExemplo(),
+      profissionais: [
+        {
+          id: "ana",
+          nome: "Ana",
+          vinculo: "parceiro",
+          comissaoPct: "40",
+          atendimentosMes: "80",
+          temCnpj: true,
+          contratoHomologado: true,
+        },
+        { id: "bia", nome: "Bia", vinculo: "comissao", comissaoPct: "30", atendimentosMes: "60" },
+      ],
+    });
+    const r = calcularReverso({ ...corte, comissaoPct: 40, comissaoEhCotaParte: true, precoCobrado: 30, margemMetaPct: 25 }, n);
+    expect(r.valorCotaParte).toBeCloseTo(30 * 0.4, 10);
+  });
+
+  it("DRE: serviço inválido fica de fora e é contado", () => {
+    const sc = comCalc([...servicosExemplo(), { ...corte, id: "x", atendimentosMes: 0 }], nd);
+    const dre = montarDRE(sc, nd);
+    const soValidos = montarDRE(comCalc(servicosExemplo(), nd), nd);
+    expect(dre.qtdInvalidos).toBe(1);
+    expect(dre.receitaBruta).toBeCloseTo(soValidos.receitaBruta, 8);
+  });
+
+  it("indicadores: margem ponderada pelo mix e ponto de equilíbrio em atendimentos", () => {
+    const sc = comCalc(servicosExemplo(), nd).filter((x) => x.calc.status === "ok");
+    const dre = montarDRE(sc, nd);
+    const ind = calcularIndicadoresGerenciais(sc, dre, nd, negocioExemplo());
+    const total = 120 + 55 + 28;
+    const mcp = sc.reduce((s, x) => s + (N(x.atendimentosMes) / total) * x.calc.margemContribuicaoUnitaria, 0);
+    expect(ind.somaAtendimentosMix).toBe(total);
+    expect(ind.margemContribuicaoPonderada).toBeCloseTo(mcp, 10);
+    expect(ind.pontoEquilibrioMix).toBeCloseTo(nd.custoFixoLiquido / mcp, 8);
+    expect(ind.peEconomicoRS).toBeCloseTo((dre.custosFixosLiquidos + 8000 * 0.008) / dre.rcm, 8);
+    expect(ind.gao).toBeCloseTo(dre.margemContribuicaoTotal / dre.resultadoOperacional, 10);
+    // Resultado exatamente zero: alavancagem indefinida.
+    expect(calcularIndicadoresGerenciais(sc, { ...dre, resultadoOperacional: 0 }, nd, negocioExemplo()).gao).toBeNull();
+  });
+
+  it("pacote: preço mínimo = custos somados ÷ (1 − comissão − taxa − imposto − menor margem)", () => {
+    const itens = [
+      { ...corte, calc: calcularServico(corte, nd) },
+      { ...escova, calc: calcularServico(escova, nd) },
+    ];
+    const r = calcularPrecoMinimoPacote(itens, nd);
+    const custoBase = itens.reduce((s, it) => s + it.calc.totalVariaveis + it.calc.custoFixoRateado, 0);
+    const soma = 30 + 3 + nd.impostoPct + 25; // mesmas comissão e taxa; menor margem 25%
+    expect(r.precoMinimoRecomendado).toBeCloseTo(custoBase / (1 - soma / 100), 10);
+    expect(r.margemUsadaPct).toBe(25);
+    // Com margens diferentes, vale a menor, de quem a tem.
+    const r2 = calcularPrecoMinimoPacote([itens[0], { ...itens[1], margemPct: 10 }], nd);
+    expect(r2.margemUsadaPct).toBe(10);
+    expect(r2.servicoMargemMenor).toBe("Escova");
+    // Comissões diferentes: média ponderada pelo preço de cada serviço.
+    const r3 = calcularPrecoMinimoPacote([itens[0], { ...itens[1], comissaoPct: 50 }], nd);
+    const pesoA = itens[0].calc.preco;
+    const pesoB = itens[1].calc.preco;
+    const comissaoMedia = (30 * pesoA + 50 * pesoB) / (pesoA + pesoB);
+    expect(r3.precoMinimoRecomendado).toBeCloseTo(custoBase / (1 - (comissaoMedia + 3 + nd.impostoPct + 25) / 100), 10);
+    // Soma de exatamente 100% já trava.
+    expect(calcularPrecoMinimoPacote([{ ...itens[0], margemPct: 100 - 30 - 3 - nd.impostoPct }], nd).status).toBe("trava-percentual");
+  });
+
+  it("pacote com parceira: taxa e imposto só sobre a parte do salão", () => {
+    const n = computeNegocioDerivado({
+      ...negocioExemplo(),
+      profissionais: [
+        { id: "ana", nome: "Ana", vinculo: "parceiro", comissaoPct: "40", temCnpj: true, contratoHomologado: true },
+        { id: "bia", nome: "Bia", vinculo: "comissao", comissaoPct: "30" },
+      ],
+    });
+    const s = { ...corte, comissaoPct: 40, comissaoEhCotaParte: true };
+    const it = { ...s, calc: calcularServico(s, n) };
+    const r = calcularPrecoMinimoPacote([it], n);
+    const custoBase = it.calc.totalVariaveis + it.calc.custoFixoRateado;
+    const soma = 40 + 3 * 0.6 + n.impostoPct * 0.6 + 25;
+    expect(r.precoMinimoRecomendado).toBeCloseTo(custoBase / (1 - soma / 100), 10);
+  });
+
+  it("comissão média: nome com espaços conta, comissão vazia não, dono entra com 0%", () => {
+    const r = calcularComissaoEquipe([
+      { nome: " Ana ", comissaoPct: "40", atendimentosMes: "10" },
+      { nome: "Bia", comissaoPct: "  ", atendimentosMes: "10" },
+      { nome: "Cris", vinculo: "dono", atendimentosMes: "10" },
+    ]);
+    expect(r.participantes.map((p) => p.nome)).toEqual(["Ana", "Cris"]);
+    expect(r.pct).toBe(20); // (40 × 10 + 0 × 10) ÷ 20
+    // Parceiro conta como comissionado na média.
+    const p = calcularComissaoEquipe([
+      { nome: "Ana", vinculo: "parceiro", comissaoPct: "40", temCnpj: true, contratoHomologado: true },
+      { nome: "Cris", vinculo: "dono" },
+    ]);
+    expect(p.pct).toBe(20);
+    expect(p.parcelaParceiroPct).toBe(20);
+  });
+
+  it("taxa média: forma com 0% de participação fica de fora; 99,5% já conta como completo", () => {
+    const r = calcularTaxaRecebimento({
+      pix: { participacaoPct: "60", taxaPct: "1" },
+      credito: { participacaoPct: "39.5", taxaPct: "3" },
+      debito: { participacaoPct: "0", taxaPct: "2" },
+    });
+    expect(r.itens.map((i) => i.id)).toEqual(["pix", "credito"]);
+    expect(r.completo).toBe(true);
+    expect(r.pct).toBeCloseTo((60 * 1 + 39.5 * 3) / 99.5, 10);
+    expect(calcularTaxaRecebimento({ pix: { participacaoPct: "99.4", taxaPct: "1" } }).completo).toBe(false);
+    expect(calcularTaxaRecebimento({})).toBeNull();
+  });
+
+  it("leitura de valores: só 3 dígitos depois do ponto é milhar", () => {
+    expect(N(normalizarValorBR("2.5000"))).toBe(2.5);
+    expect(N(normalizarValorBR("12.345"))).toBe(12345);
+    expect(normalizarValorBR("2500,")).toBe("2500.");
+    expect(normalizarValorBR(" 7 ")).toBe("7");
+  });
+
+  it("posição na concorrência: chaves e limites de cada faixa", () => {
+    const chave = (seu, valores) => posicaoNaConcorrencia(seu, valores).chave;
+    expect(chave(25.5, [20, 25, 30])).toBe("mediana"); // 2% acima: ainda conta como na mediana
+    expect(chave(25.625, [20, 25, 30])).toBe("acima"); // exatamente 2,5% acima já não conta
+    expect(chave(24.375, [20, 25, 30])).toBe("abaixo"); // exatamente 2,5% abaixo
+    expect(chave(20, [20, 25, 30])).toBe("abaixo"); // igual ao menor não é "abaixo de todos"
+    expect(chave(30, [20, 25, 30])).toBe("acima"); // igual ao maior não é "acima de todos"
+    expect(chave(19, [20, 25, 30])).toBe("abaixo-todos");
+    expect(chave(31, [20, 25, 30])).toBe("acima-todos");
+    const p = posicaoNaConcorrencia(22, [20, 25, 30]);
+    expect([p.min, p.med, p.max]).toEqual([20, 25, 30]);
+    expect(p.difPct).toBeCloseTo(-12, 10);
+  });
+
+  it("planilha do Observatório: cabeçalhos, ordem e preços fora da comparação", () => {
+    const hoje = new Date("2026-10-16T12:00:00");
+    const concorrentes = [
+      {
+        id: "z",
+        cidade: "Irará",
+        nome: "Z",
+        tipo: "Salão",
+        lat: -12.05,
+        lng: -38.77,
+        precos: [{ servicoId: "corte", servicoNome: "Corte", valor: 25.555, data: "2026-04-01", fonte: "internet" }],
+      },
+      {
+        id: "a",
+        cidade: "Feira de Santana",
+        nome: "A",
+        tipo: "Barbearia",
+        lat: null,
+        lng: null,
+        precos: [{ servicoId: "corte", servicoNome: "Corte", valor: 30, data: "2026-10-01", fonte: "contato" }],
+      },
+    ];
+    const meus = { "Feira de Santana": { lat: -12.26, lng: -38.96 } };
+    const r = linhasPlanilhaObservatorio(concorrentes, meus, [escova, corte], nd, hoje);
+    expect(r.concorrentes[0]).toEqual([
+      "Cidade",
+      "Concorrente",
+      "Tipo",
+      "Bairro",
+      "Distância do meu negócio (km)",
+      "Preços anotados",
+      "Latitude",
+      "Longitude",
+    ]);
+    expect(r.precos[0]).toEqual([
+      "Cidade",
+      "Concorrente",
+      "Serviço",
+      "Entra na comparação",
+      "Preço (R$)",
+      "Data",
+      "Onde viu",
+      "Dias desde a anotação",
+    ]);
+    expect(r.comparacao[0]).toEqual([
+      "Cidade",
+      "Serviço",
+      "Meu preço (R$)",
+      "Meu piso, sem lucro (R$)",
+      "Concorrentes",
+      "Menor (R$)",
+      "Mediana (R$)",
+      "Maior (R$)",
+      "Diferença para a mediana (%)",
+      "Situação",
+      "Preços com mais de 6 meses",
+    ]);
+    // Sem posição no mapa, não há distância, mesmo com o negócio marcado na cidade.
+    expect(r.concorrentes[2][4]).toBeNull();
+    // Irará não tem o negócio marcado: sem distância.
+    expect(r.concorrentes[1][4]).toBeNull();
+    expect(r.precos[1]).toEqual(["Irará", "Z", "Corte", "Sim", 25.56, "01/04/2026", "Instagram ou site", 198]);
+    expect(r.precos[2][6]).toBe("WhatsApp ou ligação");
+    // Cidades em ordem alfabética; dentro da cidade, serviços em ordem alfabética.
+    expect(r.comparacao.slice(1).map((l) => l[0])).toEqual(["Feira de Santana", "Irará"]);
+    const irara = r.comparacao.find((l) => l[0] === "Irará");
+    expect(irara[1]).toBe("Corte Masculino");
+    expect(irara[10]).toBe(1); // anotado há 198 dias: mais de 6 meses
+    const feira = r.comparacao.find((l) => l[0] === "Feira de Santana");
+    expect(feira[10]).toBe(0);
+    // Exatamente 180 dias ainda não conta como antigo.
+    const r180 = linhasPlanilhaObservatorio(
+      [{ ...concorrentes[1], precos: [{ ...concorrentes[1].precos[0], data: "2026-04-19" }] }],
+      meus,
+      [corte],
+      nd,
+      hoje,
+    );
+    expect(r180.precos[1][7]).toBe(180);
+    expect(r180.comparacao[1][10]).toBe(0);
+  });
+
+  it("custo por duração e por unidade: as divisões e os limites", () => {
+    const ctx = { atendimentosMes: 40, diasMesNegocio: 26, insumosCompartilhados: [] };
+    // R$ 80 que duram 45 dias, 40 atendimentos em 26 dias: 80 ÷ (45 ÷ 26 × 40)
+    expect(calcularValorItemVariavel({ modo: "duracao", valorCompra: 80, duracaoValor: 45, duracaoUnidade: "dias" }, ctx)).toBeCloseTo(
+      80 / ((45 / 26) * 40),
+      10,
+    );
+    expect(calcularValorItemVariavel({ modo: "duracao", valorCompra: 80, duracaoValor: 45 }, { ...ctx, diasMesNegocio: 0 })).toBe(0);
+    expect(calcularValorItemVariavel({ modo: "duracao", valorCompra: 80, duracaoValor: 0 }, ctx)).toBe(0);
+    // R$ 40 por 100 unidades, 2 por atendimento: 0,40 × 2
+    expect(calcularValorItemVariavel({ modo: "unidade", valorCompra: 40, quantidadeComprada: 100, usoPorAtendimento: 2 }, ctx)).toBeCloseTo(
+      0.8,
+      10,
+    );
+    const insumo = { id: "g", valorCompra: 80, duracaoValor: 0, duracaoUnidade: "dias" };
+    expect(custoMensalInsumoCompartilhado(insumo, 26)).toBe(0);
   });
 });

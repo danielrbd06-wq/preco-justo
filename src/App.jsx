@@ -11713,7 +11713,6 @@ function Faq({ alvo, aceite, onAbrirDocumento } = {}) {
 }
 
 export default App;
-export { LogoMark };
 
 /* ======================================================================= */
 /* Aba: Estoque — Frente 1 (Produtos de Revenda) completa; Frente 2        */
