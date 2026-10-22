@@ -5,9 +5,9 @@
 /* (inclusive em outro celular ou computador).                             */
 /* ======================================================================= */
 
-export const APP_COPIA = "preco-justo";
-export const FORMATO_COPIA = 1;
-export const TAMANHO_MAXIMO_COPIA = 5 * 1024 * 1024; // 5 MB: muito acima de um uso real
+const APP_COPIA = "preco-justo";
+const FORMATO_COPIA = 1;
+const TAMANHO_MAXIMO_COPIA = 5 * 1024 * 1024; // 5 MB: muito acima de um uso real
 
 // Só chaves no formato que o próprio app usa ("negocio:config", "servicos:abc123"...).
 const CHAVE_VALIDA = /^[a-z][a-z0-9-]*(:[A-Za-z0-9_.-]*)*$/;

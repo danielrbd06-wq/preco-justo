@@ -301,7 +301,7 @@ export function calcularValorItemVariavel(item, { atendimentosMes, diasMesNegoci
   return N(item.valor); // 'direto'
 }
 
-export function somaCustosVariaveis(custosVariaveis, contexto) {
+function somaCustosVariaveis(custosVariaveis, contexto) {
   return custosVariaveis.reduce((s, i) => s + calcularValorItemVariavel(i, contexto), 0);
 }
 
@@ -389,7 +389,7 @@ export function calcularServico(
 // "um mês tem uns 4 e pouco de semana". Parâmetro diasMesNegocio mantido
 // na assinatura só por compatibilidade com quem já chama esta função —
 // não é mais usado no cálculo.
-export const SEMANAS_POR_MES_CALENDARIO = 365.25 / 12 / 7;
+const SEMANAS_POR_MES_CALENDARIO = 365.25 / 12 / 7;
 
 export function pontoEquilibrioSemanal(mensal, _diasMesNegocioNaoUsado) {
   if (!Number.isFinite(mensal)) return Infinity;

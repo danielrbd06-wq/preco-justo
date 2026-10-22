@@ -17,7 +17,7 @@ export const DATA_TERMOS = "16 de outubro de 2026";
 export const CHAVE_ACEITE = "preco-justo:aceite-termos";
 
 // Tudo o que o app guarda no aparelho começa com este prefixo.
-export const PREFIXO_DADOS_APP = "preco-justo:";
+const PREFIXO_DADOS_APP = "preco-justo:";
 
 export function montarAceite({ versao = VERSAO_TERMOS, agora = new Date() } = {}) {
   return JSON.stringify({ versao, aceitoEm: agora.toISOString() });
@@ -58,7 +58,7 @@ export const RESUMO_ACEITE = [
 ];
 
 /* Cada seção: { titulo, paragrafos: [texto], itens?: [texto], depois?: [texto] } */
-export const TERMOS_DE_USO = [
+const TERMOS_DE_USO = [
   {
     titulo: "1. Quem oferece o app",
     paragrafos: ["O Preço Justo é desenvolvido por Daniel Almeida dos Santos Barbosa, em Feira de Santana, Bahia.", TEXTO_CONTATO],
@@ -128,7 +128,7 @@ export const TERMOS_DE_USO = [
   { titulo: "11. Lei aplicável", paragrafos: ["Estes Termos seguem as leis do Brasil."] },
 ];
 
-export const AVISO_PRIVACIDADE = [
+const AVISO_PRIVACIDADE = [
   {
     titulo: "1. Resumo",
     paragrafos: [

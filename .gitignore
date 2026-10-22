@@ -16,3 +16,7 @@ Thumbs.db
 .vscode/
 .idea/
 *.log
+
+# relatórios do teste de mutação (Stryker)
+reports/
+.stryker-tmp/
