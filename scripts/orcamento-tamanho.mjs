@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { gzipSync } from "node:zlib";
 
 const LIMITES_KB = {
-  inicial: 270, // o que a primeira tela precisa: JS de entrada, pré-carregados e CSS
+  inicial: 150, // o que a primeira tela precisa: JS de entrada, pré-carregados e CSS (Bloco 21: era 270)
   maiorArquivo: 130, // nenhum arquivo isolado acima disto
   total: 450, // tudo o que o app pode baixar, inclusive o que é carregado depois
 };
